@@ -1,13 +1,11 @@
-import { GoogleGenAI } from '@google/genai';
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllConferences, setAllConferences, addToPending, validateConferenceData, addChangelogEntry } from '@/lib/db';
 import type { Conference, PendingConferenceInput } from '@/lib/db';
 import { validateCronAuth, unauthorizedResponse } from '@/lib/auth';
-
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+import { discoverConferences } from '@/lib/verification';
 
 export async function GET(request: NextRequest) {
-    // Verify cron secret (same as other cron jobs)
+    // Verify cron secret
     const authResult = validateCronAuth(request);
     if (!authResult.valid) {
         return unauthorizedResponse(authResult.error);
@@ -20,47 +18,13 @@ export async function GET(request: NextRequest) {
     try {
         console.log('Starting scheduled conference discovery...');
 
-        // Get existing conferences to avoid duplicates
         const existing = await getAllConferences();
         const existingNames = existing.map(c => c.name).join(', ');
 
-        const prompt = `Search for upcoming AI safety, AI ethics, machine learning, and NLP conferences in 2026 and 2027.
-        
-Focus on academic conferences relevant to AI alignment, AI safety research, fairness, transparency, and interpretability.
+        // Use shared discovery function
+        const discovered = await discoverConferences(existingNames);
 
-Return ONLY a JSON array with this exact format:
-[
-  {
-    "name": "Conference Name YEAR",
-    "deadline": "YYYY-MM-DD",
-    "abstract_deadline": "YYYY-MM-DD",
-    "location": "City, Country",
-    "dates": "Conference dates",
-    "description": "Brief description",
-    "requirements": "Submission requirements",
-    "link": "Official website URL",
-    "category": "safety/ml/nlp/ethics",
-    "status": "open/passed/rolling",
-    "confidence_score": "high/medium/low"
-  }
-]
-
-Exclude these existing conferences: ${existingNames}
-
-Only return conferences you found with credible, recent sources. Set confidence_score to "high" only if you found official CFP/website.`;
-
-        const response = await genAI.models.generateContent({
-            model: 'gemini-2.5-pro-latest',
-            contents: prompt,
-            config: {
-                tools: [{ googleSearch: {} }]
-            }
-        });
-
-        const text = response.text;
-        const jsonMatch = text?.match(/\[[\s\S]*\]/);
-
-        if (!jsonMatch) {
+        if (discovered.length === 0) {
             console.log('No new conferences found in discovery');
             return NextResponse.json({
                 success: true,
@@ -68,17 +32,6 @@ Only return conferences you found with credible, recent sources. Set confidence_
                 pending_review: 0,
                 message: 'No new conferences found'
             });
-        }
-
-        let discovered: PendingConferenceInput[];
-        try {
-            discovered = JSON.parse(jsonMatch[0]);
-        } catch (parseError) {
-            console.error('Failed to parse LLM response:', parseError);
-            return NextResponse.json({
-                error: 'Failed to parse conference data from AI response',
-                details: parseError instanceof Error ? parseError.message : String(parseError)
-            }, { status: 500 });
         }
 
         // Validate and separate by confidence
@@ -126,7 +79,6 @@ Only return conferences you found with credible, recent sources. Set confidence_
             await setAllConferences([...existing, ...newConferences]);
             addedConferences.push(...validHigh.map(c => c.name));
 
-            // Add changelog entries for auto-added conferences
             for (const conf of validHigh) {
                 await addChangelogEntry({
                     type: 'added',

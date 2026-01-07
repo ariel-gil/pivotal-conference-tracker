@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { AI_MODELS, VERIFICATION_MODELS, DISCOVERY_MODEL, DISCOVERY_FALLBACK } from './config';
 
 // ============================================================================
 // Types
@@ -36,7 +37,7 @@ export interface VerificationResult {
 
 let genAI: GoogleGenAI | null = null;
 
-function getGenAI(): GoogleGenAI {
+export function getGenAI(): GoogleGenAI {
     if (!genAI) {
         const apiKey = process.env.GEMINI_API_KEY;
         if (!apiKey) {
@@ -54,7 +55,8 @@ function getGenAI(): GoogleGenAI {
 export async function performSearch(
     conferenceName: string,
     modelName: string,
-    searchNumber: number
+    searchNumber: number,
+    fallbackModel?: string
 ): Promise<SearchResult> {
     const today = new Date().toISOString().split('T')[0];
     const prompt = `Search for the official paper submission deadline for "${conferenceName}" conference in 2026. 
@@ -70,14 +72,9 @@ Return ONLY a JSON object with this exact format:
 
 If you cannot find a confirmed deadline, set confidence to "low" and provide your best estimate.`;
 
-    // Try primary model first, then fallback
     const modelsToTry = [modelName];
-
-    // Add fallback models
-    if (modelName === 'gemini-3-pro-preview') {
-        modelsToTry.push('gemini-2.5-pro-latest');
-    } else if (modelName === 'gemini-3-flash-preview') {
-        modelsToTry.push('gemini-2.5-flash-latest');
+    if (fallbackModel) {
+        modelsToTry.push(fallbackModel);
     }
 
     for (const currentModel of modelsToTry) {
@@ -129,7 +126,6 @@ If you cannot find a confirmed deadline, set confidence to "low" and provide you
 // ============================================================================
 
 export function analyzeConsensus(results: ModelSearchResult[]): VerificationResult {
-    // Count deadline occurrences
     const deadlineCounts = new Map<string, number>();
     const deadlineSources = new Map<string, string[]>();
 
@@ -143,7 +139,6 @@ export function analyzeConsensus(results: ModelSearchResult[]): VerificationResu
         }
     });
 
-    // Find most common deadline
     let maxCount = 0;
     let consensusDeadline = 'unknown';
     deadlineCounts.forEach((count, deadline) => {
@@ -153,7 +148,6 @@ export function analyzeConsensus(results: ModelSearchResult[]): VerificationResu
         }
     });
 
-    // Determine confidence based on consensus
     let confidence: 'high' | 'medium' | 'low' | 'needs-review';
     let recommendation: string;
     let conflicts: string | undefined;
@@ -201,17 +195,10 @@ export function analyzeConsensus(results: ModelSearchResult[]): VerificationResu
 export async function verifyConferenceDeadline(conferenceName: string): Promise<VerificationResult> {
     console.log(`Starting verification for: ${conferenceName}`);
 
-    // Perform 4 searches: 2 with Flash Preview, 2 with Pro Preview
-    const searches = [
-        { model: 'gemini-3-flash-preview', searchNum: 1 },
-        { model: 'gemini-3-flash-preview', searchNum: 2 },
-        { model: 'gemini-3-pro-preview', searchNum: 1 },
-        { model: 'gemini-3-pro-preview', searchNum: 2 },
-    ];
-
     const results = await Promise.all(
-        searches.map(async ({ model, searchNum }) => {
-            const result = await performSearch(conferenceName, model, searchNum);
+        VERIFICATION_MODELS.map(async ({ model, fallback }, index) => {
+            const searchNum = (index % 2) + 1;
+            const result = await performSearch(conferenceName, model, searchNum, fallback);
             return {
                 ...result,
                 model,
@@ -221,6 +208,67 @@ export async function verifyConferenceDeadline(conferenceName: string): Promise<
     );
 
     console.log(`Verification results for ${conferenceName}:`, results);
-
     return analyzeConsensus(results);
+}
+
+// ============================================================================
+// Discovery
+// ============================================================================
+
+export async function discoverConferences(existingNames: string): Promise<any[]> {
+    const prompt = `Search for upcoming AI safety, AI ethics, machine learning, and NLP conferences in 2026 and 2027.
+        
+Focus on academic conferences relevant to AI alignment, AI safety research, fairness, transparency, and interpretability.
+
+Return ONLY a JSON array with this exact format:
+[
+  {
+    "name": "Conference Name YEAR",
+    "deadline": "YYYY-MM-DD",
+    "abstract_deadline": "YYYY-MM-DD",
+    "location": "City, Country",
+    "dates": "Conference dates",
+    "description": "Brief description",
+    "requirements": "Submission requirements",
+    "link": "Official website URL",
+    "category": "safety/ml/nlp/ethics",
+    "status": "open/passed/rolling",
+    "confidence_score": "high/medium/low"
+  }
+]
+
+Exclude these existing conferences: ${existingNames}
+
+Only return conferences you found with credible, recent sources. Set confidence_score to "high" only if you found official CFP/website.`;
+
+    // Try primary model, then fallback
+    const modelsToTry = [DISCOVERY_MODEL, DISCOVERY_FALLBACK];
+
+    for (const model of modelsToTry) {
+        try {
+            const response = await getGenAI().models.generateContent({
+                model,
+                contents: prompt,
+                config: {
+                    tools: [{ googleSearch: {} }]
+                }
+            });
+
+            const text = response.text;
+            const jsonMatch = text?.match(/\[[\s\S]*\]/);
+
+            if (jsonMatch) {
+                console.log(`Discovery succeeded with ${model}`);
+                return JSON.parse(jsonMatch[0]);
+            }
+        } catch (error) {
+            console.error(`Discovery with ${model} failed:`, error);
+            if (model === modelsToTry[modelsToTry.length - 1]) {
+                throw error;
+            }
+            console.log('Trying fallback model for discovery...');
+        }
+    }
+
+    return [];
 }
