@@ -239,7 +239,8 @@ Return ONLY a JSON array with this exact format:
 
 Exclude these existing conferences: ${existingNames}
 
-Only return conferences you found with credible, recent sources. Set confidence_score to "high" only if you found official CFP/website.`;
+Only return conferences you found with credible, recent sources. Set confidence_score to "high" only if you found official CFP/website.
+Do not include any conferences more than 1 year into the future from today's date.`;
 
     // Try primary model, then fallback
     const modelsToTry = [DISCOVERY_MODEL, DISCOVERY_FALLBACK];

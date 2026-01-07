@@ -205,12 +205,6 @@ export default function ConferenceTracker({
     return (
         <div className="min-h-screen bg-gray-50 p-4">
             <div className="max-w-4xl mx-auto">
-                {/* Disclaimer Banner */}
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
-                    <p className="text-sm text-amber-800 text-center">
-                        Results via AI w/search grounding but have not been fully verified, please double check them
-                    </p>
-                </div>
 
                 {/* Header */}
                 <div className="bg-white rounded-lg shadow-sm p-4 mb-4">
@@ -220,11 +214,12 @@ export default function ConferenceTracker({
                             <p className="text-sm text-gray-500">
                                 {lastUpdated
                                     ? `Last auto-refresh: ${new Date(lastUpdated).toLocaleDateString()} ${new Date(lastUpdated).toLocaleTimeString()}`
-                                    : 'Automated daily updates'}
+                                    : 'Automated daily updates'}. Results via AI w/search grounding but have not been fully verified, please double check them.
                             </p>
                         </div>
                         <div className="flex items-center gap-3">
                             <div className="text-xs text-gray-500 flex items-center gap-3">
+                                <span className="font-medium">AI confidence:</span>
                                 <span className="flex items-center gap-1">
                                     <CheckCheck className="w-3 h-3 text-green-600" />
                                     <span>High</span>
