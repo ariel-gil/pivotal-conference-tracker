@@ -1,4 +1,7 @@
-import { kv } from '@vercel/kv';
+import Redis from 'ioredis';
+
+// Initialize Redis client from REDIS_URL
+const redis = new Redis(process.env.REDIS_URL || '');
 
 export interface Conference {
   id: number;
@@ -39,8 +42,8 @@ const CONFERENCES_KEY = 'conferences:all';
 
 // Get all conferences
 export async function getAllConferences(): Promise<Conference[]> {
-  const conferences = await kv.get<Conference[]>(CONFERENCES_KEY);
-  return conferences || [];
+  const data = await redis.get(CONFERENCES_KEY);
+  return data ? JSON.parse(data) : [];
 }
 
 // Get conferences that need verification (speculative deadlines)
@@ -80,7 +83,7 @@ export async function updateConferenceDeadline(
       ]
     };
 
-    await kv.set(CONFERENCES_KEY, conferences);
+    await redis.set(CONFERENCES_KEY, JSON.stringify(conferences));
   }
 }
 
@@ -100,11 +103,11 @@ export async function initializeDatabase(
       last_verified: undefined
     }));
 
-    await kv.set(CONFERENCES_KEY, initializedConferences);
+    await redis.set(CONFERENCES_KEY, JSON.stringify(initializedConferences));
   }
 }
 
 // Set all conferences (useful for updates)
 export async function setAllConferences(conferences: Conference[]): Promise<void> {
-  await kv.set(CONFERENCES_KEY, conferences);
+  await redis.set(CONFERENCES_KEY, JSON.stringify(conferences));
 }
