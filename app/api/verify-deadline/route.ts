@@ -51,10 +51,12 @@ If you cannot find a confirmed deadline, set confidence to "low" and provide you
         try {
             const model = genAI.getGenerativeModel({
                 model: currentModel,
-                tools: [{ googleSearch: {} }],
             });
 
-            const result = await model.generateContent(prompt);
+            const result = await model.generateContent({
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                tools: [{ googleSearch: {} }],
+            });
             const text = result.response.text();
 
             // Extract JSON from response
