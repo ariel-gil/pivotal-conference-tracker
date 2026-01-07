@@ -1,7 +1,6 @@
 import { getAllConferences, Conference } from '@/lib/db';
 import ConferenceTracker from '@/components/ConferenceTracker';
 
-export const dynamic = 'force-dynamic';
 export const revalidate = 3600; // Revalidate every hour
 
 export default async function Home() {

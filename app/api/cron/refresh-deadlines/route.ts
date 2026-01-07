@@ -14,11 +14,16 @@ export async function GET(request: NextRequest) {
         console.log('Starting automated deadline refresh...');
 
         const conferences = await getConferencesNeedingVerification();
-        console.log(`Found ${conferences.length} conferences needing verification`);
+
+        // Process max 10 conferences per run to avoid timeout
+        // With daily cron, all conferences will be verified within 48h
+        const MAX_PER_RUN = 10;
+        const conferencesToProcess = conferences.slice(0, MAX_PER_RUN);
+        console.log(`Processing ${conferencesToProcess.length} of ${conferences.length} conferences needing verification`);
 
         const results = [];
 
-        for (const conf of conferences) {
+        for (const conf of conferencesToProcess) {
             console.log(`Verifying: ${conf.name}`);
 
             try {
@@ -82,7 +87,8 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({
             success: true,
-            processed: conferences.length,
+            processed: conferencesToProcess.length,
+            total_needing_verification: conferences.length,
             results
         });
     } catch (error) {

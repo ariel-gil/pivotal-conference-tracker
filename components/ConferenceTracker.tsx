@@ -194,8 +194,8 @@ export default function ConferenceTracker({
                                 key={cat}
                                 onClick={() => setFilter(cat)}
                                 className={`px-3 py-1 rounded-full text-sm capitalize ${filter === cat
-                                        ? 'bg-blue-600 text-white'
-                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                     }`}
                             >
                                 {cat}
@@ -303,6 +303,11 @@ export default function ConferenceTracker({
                                             {conf.last_verified && (
                                                 <p className="text-xs text-gray-400">
                                                     Last verified: {new Date(conf.last_verified).toLocaleDateString()}
+                                                </p>
+                                            )}
+                                            {conf.date_added && (
+                                                <p className="text-xs text-gray-400">
+                                                    Added to tracker: {new Date(conf.date_added).toLocaleDateString()}
                                                 </p>
                                             )}
                                             <a
