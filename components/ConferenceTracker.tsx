@@ -196,11 +196,6 @@ export default function ConferenceTracker({
             return daysA - daysB;
         });
 
-    const urgentCount = initialConferences.filter(c => {
-        const days = getDaysUntil(c.deadline);
-        return days >= 0 && days <= URGENT_DAYS_THRESHOLD && c.status !== 'passed';
-    }).length;
-
     const needsReviewCount = initialConferences.filter(c =>
         c.confidence_score === 'needs-review' || c.confidence_score === 'low'
     ).length;
@@ -210,6 +205,13 @@ export default function ConferenceTracker({
     return (
         <div className="min-h-screen bg-gray-50 p-4">
             <div className="max-w-4xl mx-auto">
+                {/* Disclaimer Banner */}
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                    <p className="text-sm text-amber-800 text-center">
+                        Results via AI w/search grounding but have not been fully verified, please double check them
+                    </p>
+                </div>
+
                 {/* Header */}
                 <div className="bg-white rounded-lg shadow-sm p-4 mb-4">
                     <div className="flex items-center justify-between flex-wrap gap-2">
@@ -244,24 +246,14 @@ export default function ConferenceTracker({
                     </div>
 
                     {/* Status badges */}
-                    {(needsReviewCount > 0 || urgentCount > 0) && (
+                    {needsReviewCount > 0 && (
                         <div className="mt-3 flex items-center gap-2 flex-wrap">
-                            {needsReviewCount > 0 && (
-                                <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 px-3 py-1 rounded-lg">
-                                    <HelpCircle className="w-4 h-4" />
-                                    <span>
-                                        {needsReviewCount} deadline{needsReviewCount > 1 ? 's' : ''} need verification
-                                    </span>
-                                </div>
-                            )}
-                            {urgentCount > 0 && (
-                                <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 px-3 py-1 rounded-lg">
-                                    <AlertCircle className="w-4 h-4" />
-                                    <span>
-                                        {urgentCount} urgent deadline{urgentCount > 1 ? 's' : ''} (within {URGENT_DAYS_THRESHOLD} days)
-                                    </span>
-                                </div>
-                            )}
+                            <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 px-3 py-1 rounded-lg">
+                                <HelpCircle className="w-4 h-4" />
+                                <span>
+                                    {needsReviewCount} deadline{needsReviewCount > 1 ? 's' : ''} need verification
+                                </span>
+                            </div>
                         </div>
                     )}
                 </div>

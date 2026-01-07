@@ -4,14 +4,14 @@ A Next.js application that tracks AI safety, ML, NLP, and ethics conference dead
 
 ## Features
 
-- **Automated Deadline Verification**: Uses Gemini 3 Pro Preview and Flash Preview models with 4 independent searches per conference
-- **Automated Conference Discovery**: Periodically searches for new AI safety and ML conferences using automated reasoning
-- **Admin Dashboard**: Secure interface to review, approve, or dismiss discovered conferences
-- **Confidence Scoring**: High/Medium/Low/Needs-Review indicators based on source consensus
-- **Daily Auto-Refresh**: Vercel Cron automatically verifies deadlines and discovers new conferences every 24 hours
-- **Smart Filtering**: Filter by category, show/hide passed deadlines
-- **Urgent Alerts**: Highlights deadlines within 30 days
-- **Changelog**: Tracks all updates, discoveries, and verifications in a visible history feed
+- Deadline verification using Gemini models (4 searches per conference, dual-model consensus)
+- Conference discovery via Gemini with Google Search grounding
+- Admin page for reviewing and approving discovered conferences
+- Confidence indicators based on source agreement
+- Daily cron job for automatic updates
+- Category filtering and show/hide passed deadlines
+- Changelog of recent updates
+- Disclaimer noting AI-generated results should be verified
 
 ## Tech Stack
 
@@ -38,7 +38,7 @@ Create `.env.local`:
 GEMINI_API_KEY=your_gemini_api_key_here
 
 # Admin Access
-# Set a strong secret for the admin dashboard (e.g. pivotal123)
+# Set a strong secret for the admin dashboard
 ADMIN_SECRET=your_admin_secret_here
 
 # Redis (Vercel KV)
