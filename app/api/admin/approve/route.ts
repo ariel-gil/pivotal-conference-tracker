@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { approvePendingConference } from '@/lib/db';
 import { validateAdminAuth, unauthorizedResponse } from '@/lib/auth';
 
@@ -19,6 +20,9 @@ export async function POST(request: NextRequest) {
         if (!success) {
             return NextResponse.json({ error: 'Conference not found' }, { status: 404 });
         }
+
+        // Revalidate the main page cache so new conferences appear immediately
+        revalidatePath('/');
 
         return NextResponse.json({ success: true });
     } catch (error) {
