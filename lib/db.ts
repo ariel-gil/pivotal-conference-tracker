@@ -50,6 +50,10 @@ const redis = createRedisClient();
 // Types
 // ============================================================================
 
+/**
+ * Represents a confirmed, public-facing conference in the tracker.
+ * These are displayed on the main dashboard.
+ */
 export interface Conference {
   id: number;
   name: string;
@@ -69,6 +73,9 @@ export interface Conference {
   verification_history: VerificationRecord[];
 }
 
+/**
+ * Record of a single verification run for audit history.
+ */
 export interface VerificationRecord {
   timestamp: string;
   old_deadline?: string;
@@ -86,6 +93,10 @@ export interface ModelResult {
   search_number: number;
 }
 
+/**
+ * Represents a discovered conference waiting in the admin queue.
+ * These require approval before becoming public 'Conference' objects.
+ */
 export interface PendingConference {
   id: string;
   name: string;
@@ -128,6 +139,9 @@ export interface PendingConferenceInput {
 // Conference Functions
 // ============================================================================
 
+/**
+ * Retrieves all active conferences from the public list.
+ */
 export async function getAllConferences(): Promise<Conference[]> {
   try {
     const data = await redis.get(CONFERENCES_KEY);
@@ -138,6 +152,9 @@ export async function getAllConferences(): Promise<Conference[]> {
   }
 }
 
+/**
+ * Filters conferences that need re-verification (low confidence or needs-review).
+ */
 export async function getConferencesNeedingVerification(): Promise<Conference[]> {
   const conferences = await getAllConferences();
   return conferences.filter(c =>
@@ -345,6 +362,35 @@ export async function dismissPendingConference(pendingId: string): Promise<boole
   pending.splice(dismissIndex, 1);
   await redis.set(PENDING_KEY, JSON.stringify(pending));
   return true;
+}
+
+/**
+ * Deletes a conference from the public list.
+ */
+export async function deleteConference(conferenceId: number): Promise<{ success: boolean; name?: string }> {
+  await redis.watch(CONFERENCES_KEY);
+
+  try {
+    const conferences = await getAllConferences();
+    const deleteIndex = conferences.findIndex(c => c.id === conferenceId);
+
+    if (deleteIndex === -1) {
+      return { success: false };
+    }
+
+    const [deleted] = conferences.splice(deleteIndex, 1);
+    await redis.set(CONFERENCES_KEY, JSON.stringify(conferences));
+
+    await addChangelogEntry({
+      type: 'updated',
+      conferenceName: deleted.name,
+      details: 'Removed from tracker'
+    });
+
+    return { success: true, name: deleted.name };
+  } finally {
+    await redis.unwatch();
+  }
 }
 
 // ============================================================================

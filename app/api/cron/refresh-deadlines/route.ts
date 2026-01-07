@@ -80,6 +80,14 @@ export async function GET(request: NextRequest) {
 
         console.log('Automated refresh complete');
 
+        // Revalidate cache so updates appear on the main page
+        try {
+            const { revalidatePath } = await import('next/cache');
+            revalidatePath('/');
+        } catch (e) {
+            console.error('Failed to revalidate path:', e);
+        }
+
         return NextResponse.json({
             success: true,
             processed: conferencesToProcess.length,

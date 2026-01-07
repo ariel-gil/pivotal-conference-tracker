@@ -5,11 +5,13 @@ A Next.js application that tracks AI safety, ML, NLP, and ethics conference dead
 ## Features
 
 - **Automated Deadline Verification**: Uses Gemini 3 Pro Preview and Flash Preview models with 4 independent searches per conference
+- **Automated Conference Discovery**: Periodically searches for new AI safety and ML conferences using automated reasoning
+- **Admin Dashboard**: Secure interface to review, approve, or dismiss discovered conferences
 - **Confidence Scoring**: High/Medium/Low/Needs-Review indicators based on source consensus
-- **Daily Auto-Refresh**: Vercel Cron automatically updates deadlines every 24 hours
+- **Daily Auto-Refresh**: Vercel Cron automatically verifies deadlines and discovers new conferences every 24 hours
 - **Smart Filtering**: Filter by category, show/hide passed deadlines
 - **Urgent Alerts**: Highlights deadlines within 30 days
-- **Verification History**: Full audit trail of all deadline checks
+- **Changelog**: Tracks all updates, discoveries, and verifications in a visible history feed
 
 ## Tech Stack
 
@@ -35,8 +37,12 @@ Create `.env.local`:
 # Get your API key from: https://aistudio.google.com/app/apikey
 GEMINI_API_KEY=your_gemini_api_key_here
 
-# Vercel Postgres (auto-provided by Vercel)
-# POSTGRES_URL=your_postgres_connection_string
+# Admin Access
+# Set a strong secret for the admin dashboard (e.g. pivotal123)
+ADMIN_SECRET=your_admin_secret_here
+
+# Redis (Vercel KV)
+# REDIS_URL=redis://localhost:6379 (or your Vercel KV URL)
 
 # Cron Secret (generate a random string)
 CRON_SECRET=your_random_secret_here
@@ -73,6 +79,16 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000)
 
+## Admin Dashboard
+
+Access the admin dashboard to review discovered conferences:
+
+1. Navigate to `/admin`
+2. Enter your `ADMIN_SECRET` to login
+3. Review "Pending Conferences" discovered by the AI
+   - **Approve**: Adds the conference to the main public list and triggers a site update
+   - **Dismiss**: Removes the conference from the pending list
+
 ## Deployment
 
 ### Deploy to Vercel
@@ -86,6 +102,7 @@ vercel
 1. **Add Vercel KV**: Storage → Create Database → KV
 2. **Set Environment Variables**:
    - `GEMINI_API_KEY`: Your Google AI API key
+   - `ADMIN_SECRET`: Your chosen admin password
    - `CRON_SECRET`: A random secret string
    - KV variables are auto-added when you create the KV database
 3. **Initialize Data**: Visit `/api/seed` endpoint once after deployment
@@ -94,7 +111,12 @@ vercel
 ### Manual Cron Trigger (for testing)
 
 ```bash
+# Verify deadlines
 curl -X GET https://your-app.vercel.app/api/cron/refresh-deadlines \
+  -H "Authorization: Bearer YOUR_CRON_SECRET"
+
+# Discover new conferences
+curl -X GET https://your-app.vercel.app/api/cron/discover \
   -H "Authorization: Bearer YOUR_CRON_SECRET"
 ```
 
@@ -112,27 +134,33 @@ curl -X GET https://your-app.vercel.app/api/cron/refresh-deadlines \
    - **Low confidence** (✓): Conflicting data
    - **Needs review** (🔍): Verification failed
 
-3. **Automated Updates**: Vercel Cron runs daily to verify conferences with low/medium confidence or those needing review
+### Automated Discovery
+
+1. **Search**: The system asks Gemini to find new AI safety/ML conferences using Google Search grounding.
+2. **Deduplication**: Checks against existing conferences to avoid duplicates.
+3. **Queue**: New findings are added to the "Pending" list for manual admin review.
+4. **Approval**: Once approved, they appear on the main site immediately.
 
 ## Project Structure
 
 ```
 conference-tracker/
 ├── app/
+│   ├── admin/                  # Admin dashboard
 │   ├── api/
-│   │   ├── verify-deadline/route.ts    # Dual-model verification
-│   │   ├── cron/refresh-deadlines/route.ts  # Automated refresh
-│   │   └── seed/route.ts               # Database initialization
-│   ├── globals.css
-│   ├── layout.tsx
-│   └── page.tsx                        # Server component
+│   │   ├── admin/              # Admin API routes (approve/dismiss)
+│   │   ├── verify-deadline/    # Dual-model verification
+│   │   ├── discover-conferences/# Discovery logic
+│   │   ├── cron/               # Automated jobs
+│   │   └── seed/               # Database initialization
+│   ├── page.tsx                # Main public page
 ├── components/
-│   └── ConferenceTracker.tsx           # Main UI component
+│   ├── ConferenceTracker.tsx   # Main UI
+│   └── AdminReview.tsx         # Admin UI
 ├── lib/
-│   ├── db.ts                           # KV database helpers
-│   └── seed-data.ts                    # Initial conference data
-├── vercel.json                         # Cron configuration
-└── package.json
+│   ├── db.ts                   # Redis/KV helpers
+│   ├── auth.ts                 # Authentication logic
+│   └── seed-data.ts            # Initial conference data
 ```
 
 ## API Routes
@@ -148,16 +176,9 @@ Verify a single conference deadline.
 }
 ```
 
-**Response:**
-```json
-{
-  "deadline": "2026-01-28",
-  "confidence": "high",
-  "sources": ["https://icml.cc/...", "..."],
-  "modelResults": [...],
-  "recommendation": "Strong consensus across multiple searches."
-}
-```
+### POST /api/discover-conferences
+
+Trigger manual discovery (requires Admin Auth).
 
 ### GET /api/cron/refresh-deadlines
 

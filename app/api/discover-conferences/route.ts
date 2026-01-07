@@ -56,53 +56,22 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        // Auto-add high confidence conferences
-        const addedConferences: string[] = [];
-        if (validHigh.length > 0) {
-            const nextId = existing.length > 0 ? Math.max(...existing.map(c => c.id)) + 1 : 1;
-
-            const newConferences: Conference[] = validHigh.map((conf, idx) => ({
-                id: nextId + idx,
-                name: conf.name,
-                deadline: conf.deadline,
-                abstract_deadline: conf.abstract_deadline,
-                location: conf.location,
-                dates: conf.dates,
-                description: conf.description,
-                requirements: conf.requirements || 'See conference website',
-                link: conf.link,
-                category: conf.category,
-                status: conf.status,
-                confidence_score: conf.confidence_score as Conference['confidence_score'],
-                verification_sources: [],
-                date_added: new Date().toISOString(),
-                verification_history: []
-            }));
-
-            await setAllConferences([...existing, ...newConferences]);
-            addedConferences.push(...validHigh.map(c => c.name));
-
-            for (const conf of validHigh) {
-                await addChangelogEntry({
-                    type: 'added',
-                    conferenceName: conf.name,
-                    details: `Auto-discovered and added (high confidence, deadline: ${conf.deadline})`
-                });
-            }
-        }
-
-        // Add low confidence to pending for review
+        // Add ALL valid conferences to pending for review
         let pendingAdded = 0;
-        for (const conf of validLow) {
+
+        // Combine high and low confidence lists
+        const allValid = [...validHigh, ...validLow];
+
+        for (const conf of allValid) {
             const added = await addToPending(conf);
             if (added) pendingAdded++;
         }
 
         return NextResponse.json({
             success: true,
-            added: addedConferences.length,
+            added: 0, // No longer auto-adding
             pending_review: pendingAdded,
-            auto_added: addedConferences,
+            auto_added: [],
             skipped_invalid: invalid.length,
             invalid_conferences: invalid
         });
