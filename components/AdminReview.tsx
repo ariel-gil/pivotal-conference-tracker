@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, X, RefreshCw, Trash2 } from 'lucide-react';
+import { Check, X, RefreshCw, Trash2, ChevronDown } from 'lucide-react';
 import type { PendingConference, Conference } from '@/lib/db';
 
 export default function AdminReview({
@@ -22,6 +22,7 @@ export default function AdminReview({
         auto_added?: string[];
         error?: string;
     } | null>(null);
+    const [expandedConf, setExpandedConf] = useState<number | null>(null);
 
     const handleApprove = async (id: string) => {
         setLoading(id);
@@ -218,32 +219,66 @@ export default function AdminReview({
                 {/* Existing Conferences Section */}
                 <h2 className="text-xl font-semibold mb-4">Active Conferences ({conferences.length})</h2>
                 <div className="space-y-2">
-                    {conferences.map((conf) => (
-                        <div key={conf.id} className="bg-white p-3 rounded-lg shadow-sm flex justify-between items-center">
-                            <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                    <span className="font-medium truncate">{conf.name}</span>
-                                    <span className={`px-2 py-0.5 rounded text-xs ${conf.category === 'safety' ? 'bg-emerald-100 text-emerald-800' :
-                                        conf.category === 'ml' ? 'bg-blue-100 text-blue-800' :
-                                            conf.category === 'nlp' ? 'bg-purple-100 text-purple-800' :
-                                                'bg-amber-100 text-amber-800'
-                                        }`}>
-                                        {conf.category}
-                                    </span>
+                    {conferences.map((conf) => {
+                        const isExpanded = expandedConf === conf.id;
+                        return (
+                            <div key={conf.id} className="bg-white rounded-lg shadow-sm overflow-hidden">
+                                <div
+                                    className="p-3 flex justify-between items-center cursor-pointer hover:bg-gray-50"
+                                    onClick={() => setExpandedConf(isExpanded ? null : conf.id)}
+                                >
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                            <span className="font-medium truncate">{conf.name}</span>
+                                            <span className={`px-2 py-0.5 rounded text-xs ${conf.category === 'safety' ? 'bg-emerald-100 text-emerald-800' :
+                                                conf.category === 'ml' ? 'bg-blue-100 text-blue-800' :
+                                                    conf.category === 'nlp' ? 'bg-purple-100 text-purple-800' :
+                                                        'bg-amber-100 text-amber-800'
+                                                }`}>
+                                                {conf.category}
+                                            </span>
+                                        </div>
+                                        <p className="text-sm text-gray-500 ml-6">Deadline: {conf.deadline}</p>
+                                    </div>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleDelete(conf.id, conf.name); }}
+                                        disabled={loading === `conf-${conf.id}`}
+                                        className="bg-gray-100 text-red-600 px-3 py-2 rounded hover:bg-red-100 disabled:opacity-50 flex items-center gap-1"
+                                        title="Delete conference"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                        <span className="hidden sm:inline">Delete</span>
+                                    </button>
                                 </div>
-                                <p className="text-sm text-gray-500">Deadline: {conf.deadline}</p>
+                                {isExpanded && (
+                                    <div className="px-4 pb-4 border-t border-gray-100 bg-gray-50">
+                                        <div className="pt-3 space-y-2 text-sm">
+                                            <p className="text-gray-600">{conf.description}</p>
+                                            <p><span className="font-medium text-gray-700">Location:</span> {conf.location}</p>
+                                            <p><span className="font-medium text-gray-700">Dates:</span> {conf.dates}</p>
+                                            {conf.abstract_deadline && (
+                                                <p><span className="font-medium text-gray-700">Abstract deadline:</span> {conf.abstract_deadline}</p>
+                                            )}
+                                            <p><span className="font-medium text-gray-700">Requirements:</span> {conf.requirements}</p>
+                                            <a
+                                                href={conf.link}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-blue-600 hover:underline inline-block"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                {conf.link}
+                                            </a>
+                                            {conf.date_added && (
+                                                <p className="text-xs text-gray-400">Added: {new Date(conf.date_added).toLocaleDateString()}</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
-                            <button
-                                onClick={() => handleDelete(conf.id, conf.name)}
-                                disabled={loading === `conf-${conf.id}`}
-                                className="bg-gray-100 text-red-600 px-3 py-2 rounded hover:bg-red-100 disabled:opacity-50 flex items-center gap-1"
-                                title="Delete conference"
-                            >
-                                <Trash2 className="w-4 h-4" />
-                                <span className="hidden sm:inline">Delete</span>
-                            </button>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
         </div>
