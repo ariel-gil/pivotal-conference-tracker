@@ -15,7 +15,7 @@ A Next.js application that tracks AI safety, ML, NLP, and ethics conference dead
 
 - **Frontend**: Next.js 15, React 19, TypeScript, Tailwind CSS
 - **Backend**: Next.js API Routes, Vercel Cron
-- **Database**: Vercel Postgres
+- **Database**: Vercel KV (Redis)
 - **AI**: Google Gemini API (3 Pro Preview + 3 Flash Preview with 2.5 fallbacks)
 
 ## Setup
@@ -44,21 +44,26 @@ CRON_SECRET=your_random_secret_here
 
 ### 3. Database Setup
 
-If running locally with Vercel Postgres:
+**Create Vercel KV Database:**
+
+1. Go to your Vercel dashboard
+2. Select your project → Storage → Create Database
+3. Choose **KV** (Redis)
+4. Click "Create"
+5. Vercel will automatically add the KV environment variables to your project
+
+**Initialize with Data:**
+
+After deploying or running locally with KV configured:
 
 ```bash
-# Pull environment variables from Vercel
-vercel env pull .env.local
-
-# Run the schema
-# (You'll need to execute schema.sql in your Postgres database)
+# Visit this endpoint to seed the database
+curl http://localhost:3000/api/seed
+# Or after deployment:
+curl https://your-app.vercel.app/api/seed
 ```
 
-Or set up Vercel Postgres in your Vercel dashboard.
-
-### 4. Initialize Database
-
-Create an API route or script to seed the database with initial data from `lib/seed-data.ts`.
+This only needs to be done once. The endpoint will only initialize if the database is empty.
 
 ### 5. Run Development Server
 
@@ -78,11 +83,13 @@ vercel
 
 ### Configure in Vercel Dashboard
 
-1. **Add Vercel Postgres**: Storage → Create Database → Postgres
+1. **Add Vercel KV**: Storage → Create Database → KV
 2. **Set Environment Variables**:
    - `GEMINI_API_KEY`: Your Google AI API key
    - `CRON_SECRET`: A random secret string
-3. **Verify Cron Job**: The cron job is configured in `vercel.json` to run daily at 2 AM UTC
+   - KV variables are auto-added when you create the KV database
+3. **Initialize Data**: Visit `/api/seed` endpoint once after deployment
+4. **Verify Cron Job**: The cron job is configured in `vercel.json` to run daily at 2 AM UTC
 
 ### Manual Cron Trigger (for testing)
 
@@ -114,16 +121,16 @@ conference-tracker/
 ├── app/
 │   ├── api/
 │   │   ├── verify-deadline/route.ts    # Dual-model verification
-│   │   └── cron/refresh-deadlines/route.ts  # Automated refresh
+│   │   ├── cron/refresh-deadlines/route.ts  # Automated refresh
+│   │   └── seed/route.ts               # Database initialization
 │   ├── globals.css
 │   ├── layout.tsx
 │   └── page.tsx                        # Server component
 ├── components/
 │   └── ConferenceTracker.tsx           # Main UI component
 ├── lib/
-│   ├── db.ts                           # Database helpers
+│   ├── db.ts                           # KV database helpers
 │   └── seed-data.ts                    # Initial conference data
-├── schema.sql                          # Database schema
 ├── vercel.json                         # Cron configuration
 └── package.json
 ```
