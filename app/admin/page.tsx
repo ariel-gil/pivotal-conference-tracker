@@ -1,4 +1,5 @@
 import { getPendingConferences } from '@/lib/db';
+import { setAdminSessionCookie } from '@/lib/auth';
 import AdminReview from '@/components/AdminReview';
 
 export default async function AdminPage({
@@ -20,10 +21,13 @@ export default async function AdminPage({
         );
     }
 
+    // Set HTTP-only session cookie for authenticated API calls
+    await setAdminSessionCookie(adminKey);
+
     const pending = await getPendingConferences();
 
-    // Pass admin key to client component for API calls
-    return <AdminReview initialPending={pending} adminKey={adminKey} />;
+    // No longer passing adminKey to client - uses cookie instead
+    return <AdminReview initialPending={pending} />;
 }
 
 export const dynamic = 'force-dynamic';

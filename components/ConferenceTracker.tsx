@@ -1,8 +1,15 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Calendar, ExternalLink, Filter, ChevronDown, ChevronUp, AlertCircle, Check, CheckCheck, Search, HelpCircle } from 'lucide-react';
-import { Conference } from '@/lib/db';
+import { Calendar, ExternalLink, Filter, ChevronDown, ChevronUp, AlertCircle, Check, CheckCheck, Search, HelpCircle, Clock, Plus, RefreshCw } from 'lucide-react';
+import { Conference, ChangelogEntry } from '@/lib/db';
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+const URGENT_DAYS_THRESHOLD = 30;
+const VERY_URGENT_DAYS_THRESHOLD = 7;
 
 const categoryColors = {
     safety: { bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-300' },
@@ -17,8 +24,32 @@ const statusColors = {
     rolling: { bg: 'bg-blue-100', text: 'text-blue-800' }
 };
 
-function getDaysUntil(dateStr: string) {
-    if (dateStr === "Rolling" || dateStr === "unknown") return Infinity;
+const changelogIcons = {
+    added: Plus,
+    updated: RefreshCw,
+    verified: CheckCheck,
+    discovered: Search
+};
+
+const changelogColors = {
+    added: 'text-green-600',
+    updated: 'text-blue-600',
+    verified: 'text-emerald-600',
+    discovered: 'text-purple-600'
+};
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+function isValidDate(dateStr: string): boolean {
+    if (!dateStr || dateStr === "Rolling" || dateStr === "unknown") return false;
+    const date = new Date(dateStr);
+    return !isNaN(date.getTime());
+}
+
+function getDaysUntil(dateStr: string): number {
+    if (!isValidDate(dateStr)) return Infinity;
     const deadline = new Date(dateStr);
     const today = new Date();
     const diffTime = deadline.getTime() - today.getTime();
@@ -26,7 +57,7 @@ function getDaysUntil(dateStr: string) {
     return diffDays;
 }
 
-function formatDaysUntil(days: number) {
+function formatDaysUntil(days: number): string {
     if (days === Infinity) return "Rolling";
     if (days < 0) return `${Math.abs(days)}d ago`;
     if (days === 0) return "Today!";
@@ -35,6 +66,25 @@ function formatDaysUntil(days: number) {
     if (days <= 30) return `${Math.floor(days / 7)}w left`;
     return `${Math.floor(days / 30)}mo left`;
 }
+
+function formatRelativeTime(timestamp: string): string {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
+}
+
+// ============================================================================
+// Components
+// ============================================================================
 
 function ConfidenceIndicator({ score }: { score: string }) {
     switch (score) {
@@ -68,17 +118,54 @@ function ConfidenceIndicator({ score }: { score: string }) {
     }
 }
 
+function ChangelogSection({ entries }: { entries: ChangelogEntry[] }) {
+    if (entries.length === 0) return null;
+
+    return (
+        <div className="bg-white rounded-lg shadow-sm p-4 mt-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-gray-500" />
+                Recent Updates
+            </h2>
+            <div className="space-y-2">
+                {entries.map((entry) => {
+                    const Icon = changelogIcons[entry.type] || RefreshCw;
+                    const colorClass = changelogColors[entry.type] || 'text-gray-600';
+
+                    return (
+                        <div key={entry.id} className="flex items-start gap-3 text-sm">
+                            <Icon className={`w-4 h-4 mt-0.5 ${colorClass}`} />
+                            <div className="flex-1 min-w-0">
+                                <span className="font-medium text-gray-900">{entry.conferenceName}</span>
+                                <span className="text-gray-500"> — {entry.details}</span>
+                            </div>
+                            <span className="text-xs text-gray-400 whitespace-nowrap">
+                                {formatRelativeTime(entry.timestamp)}
+                            </span>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+// ============================================================================
+// Main Component
+// ============================================================================
+
 export default function ConferenceTracker({
     initialConferences,
+    changelog,
     error
 }: {
     initialConferences: Conference[];
+    changelog: ChangelogEntry[];
     error: string | null;
 }) {
     const [filter, setFilter] = useState('all');
     const [showPassed, setShowPassed] = useState(false);
     const [expandedId, setExpandedId] = useState<number | null>(null);
-    const [sortBy, setSortBy] = useState('deadline');
 
     if (error) {
         return (
@@ -90,7 +177,7 @@ export default function ConferenceTracker({
                     </div>
                     <p className="text-red-700 text-sm">{error}</p>
                     <p className="text-red-600 text-xs mt-2">
-                        Make sure the database is set up and environment variables are configured.
+                        Please check that the database is set up and environment variables are configured correctly.
                     </p>
                 </div>
             </div>
@@ -104,17 +191,14 @@ export default function ConferenceTracker({
             return true;
         })
         .sort((a, b) => {
-            if (sortBy === 'deadline') {
-                const daysA = getDaysUntil(a.deadline);
-                const daysB = getDaysUntil(b.deadline);
-                return daysA - daysB;
-            }
-            return a.name.localeCompare(b.name);
+            const daysA = getDaysUntil(a.deadline);
+            const daysB = getDaysUntil(b.deadline);
+            return daysA - daysB;
         });
 
     const urgentCount = initialConferences.filter(c => {
         const days = getDaysUntil(c.deadline);
-        return days >= 0 && days <= 30 && c.status !== 'passed';
+        return days >= 0 && days <= URGENT_DAYS_THRESHOLD && c.status !== 'passed';
     }).length;
 
     const needsReviewCount = initialConferences.filter(c =>
@@ -174,7 +258,7 @@ export default function ConferenceTracker({
                                 <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 px-3 py-1 rounded-lg">
                                     <AlertCircle className="w-4 h-4" />
                                     <span>
-                                        {urgentCount} urgent deadline{urgentCount > 1 ? 's' : ''} (within 30 days)
+                                        {urgentCount} urgent deadline{urgentCount > 1 ? 's' : ''} (within {URGENT_DAYS_THRESHOLD} days)
                                     </span>
                                 </div>
                             )}
@@ -220,7 +304,7 @@ export default function ConferenceTracker({
                     {filteredConferences.map(conf => {
                         const days = getDaysUntil(conf.deadline);
                         const isExpanded = expandedId === conf.id;
-                        const isUrgent = days >= 0 && days <= 7 && conf.status !== 'passed';
+                        const isUrgent = days >= 0 && days <= VERY_URGENT_DAYS_THRESHOLD && conf.status !== 'passed';
                         const colors = categoryColors[conf.category as keyof typeof categoryColors] || categoryColors.ml;
                         const statusColor = statusColors[conf.status as keyof typeof statusColors] || statusColors.open;
 
@@ -333,6 +417,9 @@ export default function ConferenceTracker({
                         No conferences match your filters
                     </div>
                 )}
+
+                {/* Changelog Section */}
+                <ChangelogSection entries={changelog} />
 
                 {/* Footer */}
                 <div className="mt-6 text-center text-sm text-gray-500">

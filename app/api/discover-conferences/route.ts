@@ -1,11 +1,24 @@
 import { GoogleGenAI } from '@google/genai';
-import { NextResponse } from 'next/server';
-import { getAllConferences, setAllConferences, addToPending, validateConferenceData } from '@/lib/db';
-import type { Conference } from '@/lib/db';
+import { NextRequest, NextResponse } from 'next/server';
+import { getAllConferences, setAllConferences, addToPending, validateConferenceData, addChangelogEntry } from '@/lib/db';
+import type { Conference, PendingConferenceInput } from '@/lib/db';
+import { validateAdminAuth, unauthorizedResponse, checkRateLimit, rateLimitedResponse } from '@/lib/auth';
 
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
-export async function POST() {
+export async function POST(request: NextRequest) {
+    // Require admin auth for discovery
+    const authResult = await validateAdminAuth(request);
+    if (!authResult.valid) {
+        return unauthorizedResponse(authResult.error);
+    }
+
+    // Rate limiting
+    const rateLimit = checkRateLimit('discover-conferences');
+    if (!rateLimit.allowed) {
+        return rateLimitedResponse(rateLimit.retryAfterMs!);
+    }
+
     if (!process.env.GEMINI_API_KEY) {
         return NextResponse.json({ error: 'GEMINI_API_KEY not configured' }, { status: 500 });
     }
@@ -60,26 +73,26 @@ Only return conferences you found with credible, recent sources. Set confidence_
             });
         }
 
-        let discovered;
+        let discovered: PendingConferenceInput[];
         try {
             discovered = JSON.parse(jsonMatch[0]);
         } catch (parseError) {
             console.error('Failed to parse LLM response:', parseError);
             return NextResponse.json({
-                error: 'Failed to parse conference data',
-                details: String(parseError)
+                error: 'Failed to parse conference data from AI response',
+                details: parseError instanceof Error ? parseError.message : String(parseError)
             }, { status: 500 });
         }
 
         // Validate and separate by confidence
-        const validHigh: any[] = [];
-        const validLow: any[] = [];
-        const invalid: any[] = [];
+        const validHigh: PendingConferenceInput[] = [];
+        const validLow: PendingConferenceInput[] = [];
+        const invalid: Array<{ conference: string; errors: string[] }> = [];
 
         for (const conf of discovered) {
             const validation = validateConferenceData(conf);
             if (!validation.valid) {
-                invalid.push({ conference: conf.name, errors: validation.errors });
+                invalid.push({ conference: conf.name || 'Unknown', errors: validation.errors });
                 continue;
             }
 
@@ -95,7 +108,7 @@ Only return conferences you found with credible, recent sources. Set confidence_
         if (validHigh.length > 0) {
             const nextId = existing.length > 0 ? Math.max(...existing.map(c => c.id)) + 1 : 1;
 
-            const newConferences: Conference[] = validHigh.map((conf: any, idx: number) => ({
+            const newConferences: Conference[] = validHigh.map((conf, idx) => ({
                 id: nextId + idx,
                 name: conf.name,
                 deadline: conf.deadline,
@@ -107,7 +120,7 @@ Only return conferences you found with credible, recent sources. Set confidence_
                 link: conf.link,
                 category: conf.category,
                 status: conf.status,
-                confidence_score: conf.confidence_score,
+                confidence_score: conf.confidence_score as Conference['confidence_score'],
                 verification_sources: [],
                 date_added: new Date().toISOString(),
                 verification_history: []
@@ -115,6 +128,15 @@ Only return conferences you found with credible, recent sources. Set confidence_
 
             await setAllConferences([...existing, ...newConferences]);
             addedConferences.push(...validHigh.map(c => c.name));
+
+            // Add changelog entries for auto-added conferences
+            for (const conf of validHigh) {
+                await addChangelogEntry({
+                    type: 'added',
+                    conferenceName: conf.name,
+                    details: `Auto-discovered and added (high confidence, deadline: ${conf.deadline})`
+                });
+            }
         }
 
         // Add low confidence to pending for review
@@ -135,7 +157,7 @@ Only return conferences you found with credible, recent sources. Set confidence_
     } catch (error) {
         console.error('Discovery error:', error);
         return NextResponse.json(
-            { error: 'Discovery failed', details: String(error) },
+            { error: 'Discovery failed', details: error instanceof Error ? error.message : String(error) },
             { status: 500 }
         );
     }

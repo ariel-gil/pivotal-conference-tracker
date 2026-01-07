@@ -5,47 +5,61 @@ import { Check, X, RefreshCw } from 'lucide-react';
 import type { PendingConference } from '@/lib/db';
 
 export default function AdminReview({
-    initialPending,
-    adminKey
+    initialPending
 }: {
     initialPending: PendingConference[];
-    adminKey: string
 }) {
     const [pending, setPending] = useState(initialPending);
     const [loading, setLoading] = useState<string | null>(null);
     const [discovering, setDiscovering] = useState(false);
-    const [discoveryResult, setDiscoveryResult] = useState<any>(null);
+    const [discoveryResult, setDiscoveryResult] = useState<{
+        success?: boolean;
+        added?: number;
+        pending_review?: number;
+        auto_added?: string[];
+        error?: string;
+    } | null>(null);
 
     const handleApprove = async (id: string) => {
         setLoading(id);
-        const res = await fetch('/api/admin/approve', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${adminKey}`
-            },
-            body: JSON.stringify({ id })
-        });
+        try {
+            const res = await fetch('/api/admin/approve', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include', // Send cookies
+                body: JSON.stringify({ id })
+            });
 
-        if (res.ok) {
-            setPending(pending.filter(c => c.id !== id));
+            if (res.ok) {
+                setPending(pending.filter(c => c.id !== id));
+            } else {
+                const data = await res.json();
+                alert(`Failed to approve: ${data.error}`);
+            }
+        } catch (error) {
+            alert(`Error: ${error instanceof Error ? error.message : String(error)}`);
         }
         setLoading(null);
     };
 
     const handleDismiss = async (id: string) => {
         setLoading(id);
-        const res = await fetch('/api/admin/dismiss', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${adminKey}`
-            },
-            body: JSON.stringify({ id })
-        });
+        try {
+            const res = await fetch('/api/admin/dismiss', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include', // Send cookies
+                body: JSON.stringify({ id })
+            });
 
-        if (res.ok) {
-            setPending(pending.filter(c => c.id !== id));
+            if (res.ok) {
+                setPending(pending.filter(c => c.id !== id));
+            } else {
+                const data = await res.json();
+                alert(`Failed to dismiss: ${data.error}`);
+            }
+        } catch (error) {
+            alert(`Error: ${error instanceof Error ? error.message : String(error)}`);
         }
         setLoading(null);
     };
@@ -56,18 +70,24 @@ export default function AdminReview({
 
         try {
             const res = await fetch('/api/discover-conferences', {
-                method: 'POST'
+                method: 'POST',
+                credentials: 'include' // Send cookies
             });
 
             const result = await res.json();
-            setDiscoveryResult(result);
 
-            // Refresh pending list
-            if (result.pending_review > 0) {
-                window.location.reload();
+            if (res.status === 429) {
+                setDiscoveryResult({ error: `Rate limited. Try again in ${result.retryAfterSeconds} seconds.` });
+            } else {
+                setDiscoveryResult(result);
+
+                // Refresh pending list if new items were added
+                if (result.pending_review > 0) {
+                    window.location.reload();
+                }
             }
         } catch (error) {
-            setDiscoveryResult({ error: String(error) });
+            setDiscoveryResult({ error: error instanceof Error ? error.message : String(error) });
         }
 
         setDiscovering(false);
@@ -97,7 +117,7 @@ export default function AdminReview({
                                 <p className="font-medium">Discovery complete!</p>
                                 <p>Added: {discoveryResult.added} conferences</p>
                                 <p>Pending review: {discoveryResult.pending_review} conferences</p>
-                                {discoveryResult.auto_added?.length > 0 && (
+                                {discoveryResult.auto_added && discoveryResult.auto_added.length > 0 && (
                                     <p className="text-sm mt-1">Auto-added: {discoveryResult.auto_added.join(', ')}</p>
                                 )}
                             </div>

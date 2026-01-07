@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getConferencesNeedingVerification, updateConferenceDeadline } from '@/lib/db';
+import { verifyConferenceDeadline } from '@/lib/verification';
+import { validateCronAuth, unauthorizedResponse } from '@/lib/auth';
+
+// Constants
+const MAX_CONFERENCES_PER_RUN = 10;
+const DELAY_BETWEEN_VERIFICATIONS_MS = 2000;
 
 export async function GET(request: NextRequest) {
     // Verify cron secret
-    const authHeader = request.headers.get('authorization');
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const authResult = validateCronAuth(request);
+    if (!authResult.valid) {
+        return unauthorizedResponse(authResult.error);
     }
 
     try {
@@ -15,10 +19,8 @@ export async function GET(request: NextRequest) {
 
         const conferences = await getConferencesNeedingVerification();
 
-        // Process max 10 conferences per run to avoid timeout
-        // With daily cron, all conferences will be verified within 48h
-        const MAX_PER_RUN = 10;
-        const conferencesToProcess = conferences.slice(0, MAX_PER_RUN);
+        // Process limited conferences per run to avoid timeout
+        const conferencesToProcess = conferences.slice(0, MAX_CONFERENCES_PER_RUN);
         console.log(`Processing ${conferencesToProcess.length} of ${conferences.length} conferences needing verification`);
 
         const results = [];
@@ -27,21 +29,8 @@ export async function GET(request: NextRequest) {
             console.log(`Verifying: ${conf.name}`);
 
             try {
-                // Call verification API
-                const verifyResponse = await fetch(
-                    `${process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'}/api/verify-deadline`,
-                    {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ conferenceName: conf.name })
-                    }
-                );
-
-                if (!verifyResponse.ok) {
-                    throw new Error(`Verification API returned ${verifyResponse.status}`);
-                }
-
-                const verification = await verifyResponse.json();
+                // Call verification directly instead of HTTP
+                const verification = await verifyConferenceDeadline(conf.name);
 
                 // Update database
                 const verificationRecord = {
@@ -50,7 +39,13 @@ export async function GET(request: NextRequest) {
                     new_deadline: verification.deadline,
                     confidence: verification.confidence,
                     sources: verification.sources,
-                    model_results: verification.modelResults
+                    model_results: verification.modelResults.map(r => ({
+                        model: r.model,
+                        deadline: r.deadline,
+                        confidence: r.confidence,
+                        source: r.source,
+                        search_number: r.searchNumber
+                    }))
                 };
 
                 await updateConferenceDeadline(
@@ -71,14 +66,14 @@ export async function GET(request: NextRequest) {
 
                 console.log(`✓ ${conf.name}: ${conf.deadline} → ${verification.deadline} (${verification.confidence})`);
 
-                // Small delay between requests to avoid rate limiting
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                // Delay between requests to avoid rate limiting
+                await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_VERIFICATIONS_MS));
             } catch (error) {
-                console.error(`✗ ${conf.name}: ${error}`);
+                console.error(`✗ ${conf.name}:`, error);
                 results.push({
                     conference: conf.name,
                     status: 'error',
-                    error: String(error)
+                    error: error instanceof Error ? error.message : String(error)
                 });
             }
         }
@@ -94,11 +89,10 @@ export async function GET(request: NextRequest) {
     } catch (error) {
         console.error('Cron job error:', error);
         return NextResponse.json(
-            { error: 'Cron job failed', details: String(error) },
+            { error: 'Cron job failed', details: error instanceof Error ? error.message : String(error) },
             { status: 500 }
         );
     }
 }
 
-// Allow manual triggering for testing
 export const dynamic = 'force-dynamic';
