@@ -3,6 +3,10 @@
         {
             "path": "/api/cron/refresh-deadlines",
             "schedule": "0 2 * * *"
+        },
+        {
+            "path": "/api/cron/discover",
+            "schedule": "0 3 */2 * *"
         }
     ]
 }

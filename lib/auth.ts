@@ -41,20 +41,6 @@ export function unauthorizedResponse(message: string = 'Unauthorized'): NextResp
 }
 
 /**
- * Sets the admin session cookie
- */
-export async function setAdminSessionCookie(secret: string): Promise<void> {
-    const cookieStore = await cookies();
-    cookieStore.set(ADMIN_COOKIE_NAME, secret, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: ADMIN_COOKIE_MAX_AGE,
-        path: '/'
-    });
-}
-
-/**
  * Validates cron job authorization
  */
 export function validateCronAuth(request: NextRequest): { valid: boolean; error?: string } {
