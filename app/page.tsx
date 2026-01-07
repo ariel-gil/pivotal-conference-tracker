@@ -1,11 +1,11 @@
-import { getAllConferences } from '@/lib/db';
+import { getAllConferences, Conference } from '@/lib/db';
 import ConferenceTracker from '@/components/ConferenceTracker';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 3600; // Revalidate every hour
 
 export default async function Home() {
-    let conferences = [];
+    let conferences: Conference[] = [];
     let error = null;
 
     try {

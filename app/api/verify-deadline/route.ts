@@ -60,7 +60,7 @@ If you cannot find a confirmed deadline, set confidence to "low" and provide you
             const text = response.text;
 
             // Extract JSON from response
-            const jsonMatch = text.match(/\{[\s\S]*?\}/);
+            const jsonMatch = text?.match(/\{[\s\S]*?\}/);
             if (jsonMatch) {
                 const parsed = JSON.parse(jsonMatch[0]);
                 console.log(`✓ Search ${searchNumber} with ${currentModel} succeeded`);
