@@ -1,7 +1,7 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import { NextRequest, NextResponse } from 'next/server';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
 interface VerificationResult {
     deadline: string;
@@ -49,25 +49,30 @@ If you cannot find a confirmed deadline, set confidence to "low" and provide you
 
     for (const currentModel of modelsToTry) {
         try {
-            const model = genAI.getGenerativeModel({
+            const response = await genAI.models.generateContent({
                 model: currentModel,
+                contents: prompt,
+                config: {
+                    tools: [{ googleSearch: {} }]
+                }
             });
 
-            const result = await model.generateContent({
-                contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                tools: [{ googleSearch: {} }],
-            });
-            const text = result.response.text();
+            const text = response.text;
 
             // Extract JSON from response
             const jsonMatch = text.match(/\{[\s\S]*?\}/);
             if (jsonMatch) {
                 const parsed = JSON.parse(jsonMatch[0]);
                 console.log(`✓ Search ${searchNumber} with ${currentModel} succeeded`);
+
+                // Extract sources from grounding metadata if available
+                const groundingMetadata = response.candidates?.[0]?.groundingMetadata;
+                const sources = groundingMetadata?.groundingChunks?.map(chunk => chunk.web?.uri).filter(Boolean) || [];
+
                 return {
                     deadline: parsed.deadline || 'unknown',
                     confidence: parsed.confidence || 'low',
-                    source: parsed.source || 'No source provided'
+                    source: sources[0] || parsed.source || 'No source provided'
                 };
             }
         } catch (error) {
