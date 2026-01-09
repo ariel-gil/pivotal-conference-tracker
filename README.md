@@ -89,6 +89,23 @@ Access the admin dashboard to review discovered conferences:
    - **Approve**: Adds the conference to the main public list and triggers a site update
    - **Dismiss**: Removes the conference from the pending list
 
+### Review Status
+
+Each conference has a review status that controls how AI updates are handled:
+
+| Status | Behavior |
+|--------|----------|
+| **Unreviewed** (default) | AI deadline updates apply automatically |
+| **Reviewed** | AI updates go to "AI-Suggested Updates" queue for manual approval |
+| **Speculative** | AI deadline updates apply automatically |
+
+This prevents the AI from overwriting deadlines you've manually verified. When the daily cron job detects a deadline change for a "Reviewed" conference, you'll see it in the admin panel as a pending update to approve or dismiss.
+
+### Editing Conferences
+
+- **Deadline**: Click the edit icon next to any conference's deadline to change it
+- **Review Status**: Use the dropdown on each conference to change its status
+
 ## Deployment
 
 ### Deploy to Vercel

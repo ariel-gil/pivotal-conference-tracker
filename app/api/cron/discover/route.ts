@@ -70,6 +70,7 @@ export async function GET(request: NextRequest) {
                 link: conf.link,
                 category: conf.category,
                 status: conf.status,
+                review_status: 'unreviewed',
                 confidence_score: conf.confidence_score as Conference['confidence_score'],
                 verification_sources: [],
                 date_added: new Date().toISOString(),

@@ -6,6 +6,7 @@ import Redis from 'ioredis';
 
 const CONFERENCES_KEY = 'conferences:all';
 const PENDING_KEY = 'conferences:pending';
+const PENDING_UPDATES_KEY = 'conferences:pending_updates';
 const CHANGELOG_KEY = 'conferences:changelog';
 const MAX_CHANGELOG_ENTRIES = 50;
 
@@ -66,6 +67,7 @@ export interface Conference {
   link: string;
   category: string;
   status: string;
+  review_status: 'unreviewed' | 'reviewed' | 'speculative';
   confidence_score: 'high' | 'medium' | 'low' | 'needs-review';
   verification_sources: string[];
   last_verified?: string;
@@ -111,6 +113,23 @@ export interface PendingConference {
   status: string;
   confidence_score: string;
   addedAt: string;
+}
+
+/**
+ * Represents an AI-suggested update to an existing conference.
+ * These require admin approval when the conference has review_status === 'reviewed'.
+ */
+export interface PendingUpdate {
+  id: string;
+  conferenceId: number;
+  conferenceName: string;
+  field: 'deadline' | 'dates' | 'location' | 'abstract_deadline';
+  oldValue: string;
+  newValue: string;
+  confidence: string;
+  sources: string[];
+  createdAt: string;
+  verificationRecord?: VerificationRecord;
 }
 
 export interface ChangelogEntry {
@@ -220,7 +239,7 @@ export async function updateConferenceDeadline(
 }
 
 export async function initializeDatabase(
-  conferences: Omit<Conference, 'id' | 'verification_sources' | 'verification_history' | 'last_verified'>[]
+  conferences: Omit<Conference, 'id' | 'verification_sources' | 'verification_history' | 'last_verified' | 'review_status'>[]
 ) {
   const existing = await getAllConferences();
 
@@ -228,6 +247,7 @@ export async function initializeDatabase(
     const initializedConferences: Conference[] = conferences.map((conf, index) => ({
       ...conf,
       id: index + 1,
+      review_status: 'unreviewed',
       verification_sources: [],
       verification_history: [],
       last_verified: undefined
@@ -328,6 +348,7 @@ export async function approvePendingConference(pendingId: string): Promise<boole
       link: approved.link,
       category: approved.category,
       status: approved.status,
+      review_status: 'unreviewed',
       confidence_score: approved.confidence_score as Conference['confidence_score'],
       verification_sources: [],
       date_added: new Date().toISOString(),
@@ -424,6 +445,165 @@ export async function addChangelogEntry(entry: Omit<ChangelogEntry, 'id' | 'time
   } catch (error) {
     console.error('Failed to add changelog entry:', error);
     // Non-critical, don't throw
+  }
+}
+
+// ============================================================================
+// Pending Updates Functions (AI-suggested changes for reviewed conferences)
+// ============================================================================
+
+export async function getPendingUpdates(): Promise<PendingUpdate[]> {
+  try {
+    const data = await redis.get(PENDING_UPDATES_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch (error) {
+    console.error('Failed to get pending updates:', error);
+    throw new Error(`Database read failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+export async function addPendingUpdate(
+  conferenceId: number,
+  conferenceName: string,
+  field: PendingUpdate['field'],
+  oldValue: string,
+  newValue: string,
+  confidence: string,
+  sources: string[],
+  verificationRecord?: VerificationRecord
+): Promise<boolean> {
+  const updates = await getPendingUpdates();
+
+  // Check for duplicate pending update for same conference and field
+  const existingIndex = updates.findIndex(
+    u => u.conferenceId === conferenceId && u.field === field
+  );
+
+  const newUpdate: PendingUpdate = {
+    id: crypto.randomUUID(),
+    conferenceId,
+    conferenceName,
+    field,
+    oldValue,
+    newValue,
+    confidence,
+    sources,
+    createdAt: new Date().toISOString(),
+    verificationRecord
+  };
+
+  if (existingIndex !== -1) {
+    // Replace existing pending update for this field
+    updates[existingIndex] = newUpdate;
+  } else {
+    updates.push(newUpdate);
+  }
+
+  await redis.set(PENDING_UPDATES_KEY, JSON.stringify(updates));
+
+  await addChangelogEntry({
+    type: 'discovered',
+    conferenceName,
+    details: `AI suggested ${field} change: ${oldValue} → ${newValue} (pending review)`
+  });
+
+  return true;
+}
+
+export async function approvePendingUpdate(updateId: string): Promise<boolean> {
+  await redis.watch(PENDING_UPDATES_KEY, CONFERENCES_KEY);
+
+  try {
+    const updates = await getPendingUpdates();
+    const updateIndex = updates.findIndex(u => u.id === updateId);
+
+    if (updateIndex === -1) {
+      return false;
+    }
+
+    const [update] = updates.splice(updateIndex, 1);
+    const conferences = await getAllConferences();
+    const confIndex = conferences.findIndex(c => c.id === update.conferenceId);
+
+    if (confIndex === -1) {
+      // Conference was deleted, just remove the pending update
+      await redis.set(PENDING_UPDATES_KEY, JSON.stringify(updates));
+      return false;
+    }
+
+    // Apply the update
+    const oldValue = (conferences[confIndex] as any)[update.field];
+    (conferences[confIndex] as any)[update.field] = update.newValue;
+    conferences[confIndex].last_verified = new Date().toISOString();
+
+    // Add verification record if provided
+    if (update.verificationRecord) {
+      conferences[confIndex].verification_history.push(update.verificationRecord);
+    }
+
+    const multi = redis.multi();
+    multi.set(CONFERENCES_KEY, JSON.stringify(conferences));
+    multi.set(PENDING_UPDATES_KEY, JSON.stringify(updates));
+    await multi.exec();
+
+    await addChangelogEntry({
+      type: 'updated',
+      conferenceName: update.conferenceName,
+      details: `${update.field} updated: ${oldValue} → ${update.newValue} (approved)`
+    });
+
+    return true;
+  } finally {
+    await redis.unwatch();
+  }
+}
+
+export async function dismissPendingUpdate(updateId: string): Promise<boolean> {
+  const updates = await getPendingUpdates();
+  const updateIndex = updates.findIndex(u => u.id === updateId);
+
+  if (updateIndex === -1) {
+    return false;
+  }
+
+  updates.splice(updateIndex, 1);
+  await redis.set(PENDING_UPDATES_KEY, JSON.stringify(updates));
+  return true;
+}
+
+// ============================================================================
+// Admin Conference Editing Functions
+// ============================================================================
+
+export async function updateConferenceField(
+  conferenceId: number,
+  field: string,
+  value: string
+): Promise<{ success: boolean; oldValue?: string; error?: string }> {
+  await redis.watch(CONFERENCES_KEY);
+
+  try {
+    const conferences = await getAllConferences();
+    const confIndex = conferences.findIndex(c => c.id === conferenceId);
+
+    if (confIndex === -1) {
+      return { success: false, error: 'Conference not found' };
+    }
+
+    const oldValue = (conferences[confIndex] as any)[field];
+    (conferences[confIndex] as any)[field] = value;
+
+    await redis.set(CONFERENCES_KEY, JSON.stringify(conferences));
+
+    await addChangelogEntry({
+      type: 'updated',
+      conferenceName: conferences[confIndex].name,
+      details: `${field} manually updated: ${oldValue} → ${value}`
+    });
+
+    return { success: true, oldValue };
+  } finally {
+    await redis.unwatch();
   }
 }
 

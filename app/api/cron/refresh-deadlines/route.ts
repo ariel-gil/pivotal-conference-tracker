@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getConferencesNeedingVerification, updateConferenceDeadline } from '@/lib/db';
+import { getConferencesNeedingVerification, updateConferenceDeadline, addPendingUpdate } from '@/lib/db';
 import { verifyConferenceDeadline } from '@/lib/verification';
 import { validateCronAuth, unauthorizedResponse } from '@/lib/auth';
 
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
                 // Call verification directly instead of HTTP
                 const verification = await verifyConferenceDeadline(conf.name);
 
-                // Update database
+                // Build verification record
                 const verificationRecord = {
                     timestamp: new Date().toISOString(),
                     old_deadline: conf.deadline,
@@ -48,23 +48,52 @@ export async function GET(request: NextRequest) {
                     }))
                 };
 
-                await updateConferenceDeadline(
-                    conf.id,
-                    verification.deadline,
-                    verification.confidence,
-                    verification.sources,
-                    verificationRecord
-                );
+                const deadlineChanged = conf.deadline !== verification.deadline;
+                const isReviewed = conf.review_status === 'reviewed';
 
-                results.push({
-                    conference: conf.name,
-                    status: 'success',
-                    old_deadline: conf.deadline,
-                    new_deadline: verification.deadline,
-                    confidence: verification.confidence
-                });
+                // If conference is reviewed AND deadline changed, route to pending queue
+                if (isReviewed && deadlineChanged) {
+                    await addPendingUpdate(
+                        conf.id,
+                        conf.name,
+                        'deadline',
+                        conf.deadline,
+                        verification.deadline,
+                        verification.confidence,
+                        verification.sources,
+                        verificationRecord
+                    );
 
-                console.log(`✓ ${conf.name}: ${conf.deadline} → ${verification.deadline} (${verification.confidence})`);
+                    results.push({
+                        conference: conf.name,
+                        status: 'pending_review',
+                        old_deadline: conf.deadline,
+                        new_deadline: verification.deadline,
+                        confidence: verification.confidence,
+                        reason: 'Conference is marked as reviewed - change requires approval'
+                    });
+
+                    console.log(`⏳ ${conf.name}: ${conf.deadline} → ${verification.deadline} (pending review - conference is reviewed)`);
+                } else {
+                    // Apply update directly for unreviewed/speculative conferences
+                    await updateConferenceDeadline(
+                        conf.id,
+                        verification.deadline,
+                        verification.confidence,
+                        verification.sources,
+                        verificationRecord
+                    );
+
+                    results.push({
+                        conference: conf.name,
+                        status: 'success',
+                        old_deadline: conf.deadline,
+                        new_deadline: verification.deadline,
+                        confidence: verification.confidence
+                    });
+
+                    console.log(`✓ ${conf.name}: ${conf.deadline} → ${verification.deadline} (${verification.confidence})`);
+                }
 
                 // Delay between requests to avoid rate limiting
                 await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_VERIFICATIONS_MS));
@@ -104,3 +133,4 @@ export async function GET(request: NextRequest) {
 }
 
 export const dynamic = 'force-dynamic';
+

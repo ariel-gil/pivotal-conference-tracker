@@ -1,18 +1,27 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, X, RefreshCw, Trash2, ChevronDown } from 'lucide-react';
-import type { PendingConference, Conference } from '@/lib/db';
+import { Check, X, RefreshCw, Trash2, ChevronDown, AlertTriangle, Edit3, Save } from 'lucide-react';
+import type { PendingConference, Conference, PendingUpdate } from '@/lib/db';
+
+const REVIEW_STATUS_OPTIONS = [
+    { value: 'unreviewed', label: 'Unreviewed', color: 'bg-gray-100 text-gray-800' },
+    { value: 'reviewed', label: 'Reviewed', color: 'bg-green-100 text-green-800' },
+    { value: 'speculative', label: 'Speculative', color: 'bg-amber-100 text-amber-800' }
+] as const;
 
 export default function AdminReview({
     initialPending,
-    initialConferences
+    initialConferences,
+    initialPendingUpdates = []
 }: {
     initialPending: PendingConference[];
     initialConferences: Conference[];
+    initialPendingUpdates?: PendingUpdate[];
 }) {
     const [pending, setPending] = useState(initialPending);
     const [conferences, setConferences] = useState(initialConferences);
+    const [pendingUpdates, setPendingUpdates] = useState(initialPendingUpdates);
     const [loading, setLoading] = useState<string | null>(null);
     const [discovering, setDiscovering] = useState(false);
     const [discoveryResult, setDiscoveryResult] = useState<{
@@ -23,6 +32,8 @@ export default function AdminReview({
         error?: string;
     } | null>(null);
     const [expandedConf, setExpandedConf] = useState<number | null>(null);
+    const [editingDeadline, setEditingDeadline] = useState<number | null>(null);
+    const [editDeadlineValue, setEditDeadlineValue] = useState('');
 
     const handleApprove = async (id: string) => {
         setLoading(id);
@@ -122,6 +133,95 @@ export default function AdminReview({
         setDiscovering(false);
     };
 
+    const handleUpdateField = async (id: number, field: string, value: string) => {
+        setLoading(`field-${id}-${field}`);
+        try {
+            const res = await fetch('/api/admin/update-conference', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ id, field, value })
+            });
+
+            if (res.ok) {
+                setConferences(conferences.map(c =>
+                    c.id === id ? { ...c, [field]: value } : c
+                ));
+                if (field === 'deadline') {
+                    setEditingDeadline(null);
+                }
+            } else {
+                const data = await res.json();
+                alert(`Failed to update: ${data.error}`);
+            }
+        } catch (error) {
+            alert(`Error: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        setLoading(null);
+    };
+
+    const handleApprovePendingUpdate = async (updateId: string) => {
+        setLoading(`update-${updateId}`);
+        try {
+            const res = await fetch('/api/admin/pending-updates/approve', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ id: updateId })
+            });
+
+            if (res.ok) {
+                const update = pendingUpdates.find(u => u.id === updateId);
+                if (update) {
+                    setConferences(conferences.map(c =>
+                        c.id === update.conferenceId
+                            ? { ...c, [update.field]: update.newValue }
+                            : c
+                    ));
+                }
+                setPendingUpdates(pendingUpdates.filter(u => u.id !== updateId));
+            } else {
+                const data = await res.json();
+                alert(`Failed to approve update: ${data.error}`);
+            }
+        } catch (error) {
+            alert(`Error: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        setLoading(null);
+    };
+
+    const handleDismissPendingUpdate = async (updateId: string) => {
+        setLoading(`update-${updateId}`);
+        try {
+            const res = await fetch('/api/admin/pending-updates/dismiss', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ id: updateId })
+            });
+
+            if (res.ok) {
+                setPendingUpdates(pendingUpdates.filter(u => u.id !== updateId));
+            } else {
+                const data = await res.json();
+                alert(`Failed to dismiss update: ${data.error}`);
+            }
+        } catch (error) {
+            alert(`Error: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        setLoading(null);
+    };
+
+    const startEditingDeadline = (conf: Conference) => {
+        setEditingDeadline(conf.id);
+        setEditDeadlineValue(conf.deadline);
+    };
+
+    const getReviewStatusStyle = (status: Conference['review_status']) => {
+        const option = REVIEW_STATUS_OPTIONS.find(o => o.value === status);
+        return option?.color || 'bg-gray-100 text-gray-800';
+    };
+
     return (
         <div className="min-h-screen bg-gray-50 p-4">
             <div className="max-w-4xl mx-auto">
@@ -137,6 +237,13 @@ export default function AdminReview({
                     </button>
                 </div>
 
+                {/* Status Logic Explanation */}
+                <div className="mb-6 p-3 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-800">
+                    <p><strong>Review Status:</strong> Mark conferences as <span className="bg-green-100 px-1 rounded">Reviewed</span> to protect them from AI overwrites.
+                        AI-detected changes to reviewed conferences appear in &quot;AI-Suggested Updates&quot; for manual approval.
+                        <span className="bg-gray-100 px-1 rounded">Unreviewed</span> and <span className="bg-amber-100 px-1 rounded">Speculative</span> conferences update automatically.</p>
+                </div>
+
                 {discoveryResult && (
                     <div className={`mb-4 p-4 rounded-lg ${discoveryResult.error ? 'bg-red-50 text-red-800' : 'bg-green-50 text-green-800'}`}>
                         {discoveryResult.error ? (
@@ -148,6 +255,57 @@ export default function AdminReview({
                             </div>
                         )}
                     </div>
+                )}
+
+                {/* Pending Updates Section (AI-suggested changes for reviewed conferences) */}
+                {pendingUpdates.length > 0 && (
+                    <>
+                        <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                            <AlertTriangle className="w-5 h-5 text-amber-500" />
+                            AI-Suggested Updates ({pendingUpdates.length})
+                        </h2>
+                        <div className="space-y-3 mb-8">
+                            {pendingUpdates.map((update) => (
+                                <div key={update.id} className="bg-amber-50 border border-amber-200 p-4 rounded-lg">
+                                    <div className="flex justify-between items-start">
+                                        <div className="flex-1">
+                                            <h3 className="font-semibold">{update.conferenceName}</h3>
+                                            <p className="text-sm text-amber-800 mt-1">
+                                                <span className="font-medium capitalize">{update.field}:</span>{' '}
+                                                <span className="line-through text-amber-600">{update.oldValue}</span>
+                                                {' → '}
+                                                <span className="font-medium">{update.newValue}</span>
+                                            </p>
+                                            <p className="text-xs text-amber-600 mt-1">
+                                                Confidence: {update.confidence} • Sources: {update.sources.length}
+                                            </p>
+                                            <p className="text-xs text-gray-500 mt-1">
+                                                Suggested: {new Date(update.createdAt).toLocaleString()}
+                                            </p>
+                                        </div>
+                                        <div className="flex gap-2 ml-4">
+                                            <button
+                                                onClick={() => handleApprovePendingUpdate(update.id)}
+                                                disabled={loading === `update-${update.id}`}
+                                                className="bg-green-600 text-white px-3 py-1.5 rounded text-sm hover:bg-green-700 disabled:opacity-50 flex items-center gap-1"
+                                            >
+                                                <Check className="w-3 h-3" />
+                                                Apply
+                                            </button>
+                                            <button
+                                                onClick={() => handleDismissPendingUpdate(update.id)}
+                                                disabled={loading === `update-${update.id}`}
+                                                className="bg-gray-600 text-white px-3 py-1.5 rounded text-sm hover:bg-gray-700 disabled:opacity-50 flex items-center gap-1"
+                                            >
+                                                <X className="w-3 h-3" />
+                                                Dismiss
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </>
                 )}
 
                 {/* Pending Conferences Section */}
@@ -221,6 +379,7 @@ export default function AdminReview({
                 <div className="space-y-2">
                     {conferences.map((conf) => {
                         const isExpanded = expandedConf === conf.id;
+                        const isEditingThisDeadline = editingDeadline === conf.id;
                         return (
                             <div key={conf.id} className="bg-white rounded-lg shadow-sm overflow-hidden">
                                 <div
@@ -228,7 +387,7 @@ export default function AdminReview({
                                     onClick={() => setExpandedConf(isExpanded ? null : conf.id)}
                                 >
                                     <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-2 flex-wrap">
                                             <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                                             <span className="font-medium truncate">{conf.name}</span>
                                             <span className={`px-2 py-0.5 rounded text-xs ${conf.category === 'safety' ? 'bg-emerald-100 text-emerald-800' :
@@ -238,8 +397,58 @@ export default function AdminReview({
                                                 }`}>
                                                 {conf.category}
                                             </span>
+                                            <select
+                                                value={conf.review_status || 'unreviewed'}
+                                                onChange={(e) => {
+                                                    e.stopPropagation();
+                                                    handleUpdateField(conf.id, 'review_status', e.target.value);
+                                                }}
+                                                onClick={(e) => e.stopPropagation()}
+                                                className={`px-2 py-0.5 rounded text-xs border-0 cursor-pointer ${getReviewStatusStyle(conf.review_status || 'unreviewed')}`}
+                                                disabled={loading === `field-${conf.id}-review_status`}
+                                            >
+                                                {REVIEW_STATUS_OPTIONS.map(opt => (
+                                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                                ))}
+                                            </select>
                                         </div>
-                                        <p className="text-sm text-gray-500 ml-6">Deadline: {conf.deadline}</p>
+                                        <div className="text-sm text-gray-500 ml-6 flex items-center gap-2">
+                                            <span>Deadline:</span>
+                                            {isEditingThisDeadline ? (
+                                                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                                    <input
+                                                        type="date"
+                                                        value={editDeadlineValue}
+                                                        onChange={(e) => setEditDeadlineValue(e.target.value)}
+                                                        className="border rounded px-2 py-0.5 text-sm"
+                                                    />
+                                                    <button
+                                                        onClick={() => handleUpdateField(conf.id, 'deadline', editDeadlineValue)}
+                                                        disabled={loading === `field-${conf.id}-deadline`}
+                                                        className="p-1 text-green-600 hover:bg-green-50 rounded"
+                                                    >
+                                                        <Save className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setEditingDeadline(null)}
+                                                        className="p-1 text-gray-400 hover:bg-gray-100 rounded"
+                                                    >
+                                                        <X className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <span>{conf.deadline}</span>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); startEditingDeadline(conf); }}
+                                                        className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                                        title="Edit deadline"
+                                                    >
+                                                        <Edit3 className="w-3 h-3" />
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
                                     <button
                                         onClick={(e) => { e.stopPropagation(); handleDelete(conf.id, conf.name); }}
@@ -261,6 +470,14 @@ export default function AdminReview({
                                                 <p><span className="font-medium text-gray-700">Abstract deadline:</span> {conf.abstract_deadline}</p>
                                             )}
                                             <p><span className="font-medium text-gray-700">Requirements:</span> {conf.requirements}</p>
+                                            <p><span className="font-medium text-gray-700">AI Confidence:</span>{' '}
+                                                <span className={`px-2 py-0.5 rounded text-xs ${conf.confidence_score === 'high' ? 'bg-green-100 text-green-800' :
+                                                    conf.confidence_score === 'medium' ? 'bg-amber-100 text-amber-800' :
+                                                        'bg-red-100 text-red-800'
+                                                    }`}>
+                                                    {conf.confidence_score}
+                                                </span>
+                                            </p>
                                             <a
                                                 href={conf.link}
                                                 target="_blank"
@@ -270,6 +487,9 @@ export default function AdminReview({
                                             >
                                                 {conf.link}
                                             </a>
+                                            {conf.last_verified && (
+                                                <p className="text-xs text-gray-400">Last verified: {new Date(conf.last_verified).toLocaleString()}</p>
+                                            )}
                                             {conf.date_added && (
                                                 <p className="text-xs text-gray-400">Added: {new Date(conf.date_added).toLocaleDateString()}</p>
                                             )}
@@ -284,4 +504,3 @@ export default function AdminReview({
         </div>
     );
 }
-

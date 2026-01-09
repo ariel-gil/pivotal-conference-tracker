@@ -1,6 +1,6 @@
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { getPendingConferences, getAllConferences } from '@/lib/db';
+import { getPendingConferences, getAllConferences, getPendingUpdates } from '@/lib/db';
 import AdminReview from '@/components/AdminReview';
 
 const ADMIN_COOKIE_NAME = 'admin_session';
@@ -92,8 +92,13 @@ export default async function AdminPage({
 
     const pending = await getPendingConferences();
     const conferences = await getAllConferences();
+    const pendingUpdates = await getPendingUpdates();
 
-    return <AdminReview initialPending={pending} initialConferences={conferences} />;
+    return <AdminReview
+        initialPending={pending}
+        initialConferences={conferences}
+        initialPendingUpdates={pendingUpdates}
+    />;
 }
 
 export const dynamic = 'force-dynamic';
