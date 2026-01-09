@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Calendar, ExternalLink, Filter, ChevronDown, ChevronUp, AlertCircle, Check, CheckCheck, Search, HelpCircle, Clock, Plus, RefreshCw } from 'lucide-react';
+import { Calendar, ExternalLink, Filter, ChevronDown, ChevronUp, AlertCircle, Check, CheckCheck, Search, HelpCircle, Clock, Plus, RefreshCw, Bug } from 'lucide-react';
 import { Conference, ChangelogEntry } from '@/lib/db';
 
 // ============================================================================
@@ -403,7 +403,16 @@ export default function ConferenceTracker({
 
                 {/* Footer */}
                 <div className="mt-6 text-center text-sm text-gray-500">
-                    {initialConferences.length} conferences tracked • Automated verification every 24 hours
+                    <p>{initialConferences.length} conferences tracked • Automated verification every 24 hours</p>
+                    <a
+                        href="https://github.com/ariel-gil/pivotal-conference-tracker/issues/new?title=Bug%20Report&body=%23%23%20Description%0ADescribe%20the%20issue...%0A%0A%23%23%20Steps%20to%20Reproduce%0A1.%20...%0A%0A%23%23%20Expected%20Behavior%0A..."
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 mt-2 text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                        <Bug className="w-3.5 h-3.5" />
+                        Report a bug
+                    </a>
                 </div>
             </div>
         </div>
