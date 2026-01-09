@@ -177,7 +177,11 @@ export default function ConferenceTracker({
     const filteredConferences = initialConferences
         .filter(c => {
             if (filter !== 'all' && c.category !== filter) return false;
-            if (!showPassed && c.status === 'passed') return false;
+            // Filter by deadline date, not conference status
+            if (!showPassed) {
+                const daysUntilDeadline = getDaysUntil(c.deadline);
+                if (daysUntilDeadline < 0) return false;
+            }
             return true;
         })
         .sort((a, b) => {
@@ -266,6 +270,17 @@ export default function ConferenceTracker({
 
                 {/* Conference List */}
                 <div className="space-y-3">
+                    {/* Column Headers */}
+                    {filteredConferences.length > 0 && (
+                        <div className="flex items-center justify-between px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <div className="flex-1">
+                                <span>Conference / Dates</span>
+                            </div>
+                            <div className="text-right mr-8">
+                                <span>Submission Deadline</span>
+                            </div>
+                        </div>
+                    )}
                     {filteredConferences.map(conf => {
                         const days = getDaysUntil(conf.deadline);
                         const isExpanded = expandedId === conf.id;
