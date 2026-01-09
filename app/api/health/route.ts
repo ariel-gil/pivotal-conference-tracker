@@ -62,7 +62,11 @@ export async function GET() {
         const ai = new GoogleGenAI({ apiKey });
 
         // Simple model list call to verify API connectivity without consuming quota
-        await ai.models.list({ pageSize: 1 });
+        const models = await ai.models.list();
+        // Just iterate once to verify connectivity
+        for await (const _ of models) {
+            break;
+        }
 
         checks.gemini = {
             status: 'pass',
