@@ -7,11 +7,13 @@ A Next.js application that tracks AI safety, ML, NLP, and ethics conference dead
 - Deadline verification using Gemini models (4 searches per conference, dual-model consensus)
 - Conference discovery via Gemini with Google Search grounding
 - Admin page for reviewing and approving discovered conferences
+- **Review protection**: Mark conferences as "Reviewed" to prevent AI overwrites; changes queue for approval
 - Confidence indicators based on source agreement
 - Daily cron job for automatic updates
 - Category filtering and show/hide passed deadlines
 - Changelog of recent updates
 - Disclaimer noting AI-generated results should be verified
+- Bug reporting via GitHub Issues
 
 ## Tech Stack
 
@@ -165,7 +167,12 @@ conference-tracker/
 ├── app/
 │   ├── admin/                  # Admin dashboard
 │   ├── api/
-│   │   ├── admin/              # Admin API routes (approve/dismiss)
+│   │   ├── admin/              # Admin API routes
+│   │   │   ├── approve/        # Approve pending conference
+│   │   │   ├── dismiss/        # Dismiss pending conference
+│   │   │   ├── delete/         # Delete conference
+│   │   │   ├── update-conference/ # Update conference fields
+│   │   │   └── pending-updates/   # AI-suggested update approval
 │   │   ├── verify-deadline/    # Dual-model verification
 │   │   ├── discover-conferences/# Discovery logic
 │   │   ├── cron/               # Automated jobs
