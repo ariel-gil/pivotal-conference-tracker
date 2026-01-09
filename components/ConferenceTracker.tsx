@@ -86,34 +86,24 @@ function formatRelativeTime(timestamp: string): string {
 // Components
 // ============================================================================
 
-function ConfidenceIndicator({ score }: { score: string }) {
-    switch (score) {
-        case 'high':
+function ReviewStatusIndicator({ status }: { status?: string }) {
+    switch (status) {
+        case 'reviewed':
             return (
-                <span className="flex items-center gap-1 text-green-600" title="High confidence (3-4 sources agree)">
-                    <CheckCheck className="w-4 h-4" />
-                    <CheckCheck className="w-4 h-4 -ml-3" />
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800" title="Verified by admin">
+                    <CheckCheck className="w-3 h-3" />
+                    Verified
                 </span>
             );
-        case 'medium':
+        case 'speculative':
             return (
-                <span className="flex items-center gap-1 text-amber-600" title="Medium confidence (2 sources agree)">
-                    <CheckCheck className="w-4 h-4" />
-                </span>
-            );
-        case 'low':
-            return (
-                <span className="flex items-center gap-1 text-orange-600" title="Low confidence (conflicting data)">
-                    <Check className="w-4 h-4" />
-                </span>
-            );
-        case 'needs-review':
-            return (
-                <span className="flex items-center gap-1 text-red-600" title="Needs manual review">
-                    <Search className="w-4 h-4" />
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-800" title="Not yet verified">
+                    <HelpCircle className="w-3 h-3" />
+                    Unverified
                 </span>
             );
         default:
+            // Don't show anything for 'unreviewed' - it's the default state
             return null;
     }
 }
@@ -218,24 +208,12 @@ export default function ConferenceTracker({
                             </p>
                         </div>
                         <div className="flex items-center gap-3">
-                            <div className="text-xs text-gray-500 flex items-center gap-3">
-                                <span className="font-medium">AI confidence:</span>
-                                <span className="flex items-center gap-1">
-                                    <CheckCheck className="w-3 h-3 text-green-600" />
-                                    <span>High</span>
+                            <div className="text-xs text-gray-500 flex items-center gap-2">
+                                <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-800 flex items-center gap-1">
+                                    <CheckCheck className="w-3 h-3" />
+                                    Verified
                                 </span>
-                                <span className="flex items-center gap-1">
-                                    <CheckCheck className="w-3 h-3 text-amber-600" />
-                                    <span>Medium</span>
-                                </span>
-                                <span className="flex items-center gap-1">
-                                    <Check className="w-3 h-3 text-orange-600" />
-                                    <span>Low</span>
-                                </span>
-                                <span className="flex items-center gap-1">
-                                    <Search className="w-3 h-3 text-red-600" />
-                                    <span>Review</span>
-                                </span>
+                                <span className="text-gray-400">= admin reviewed</span>
                             </div>
                         </div>
                     </div>
@@ -315,7 +293,7 @@ export default function ConferenceTracker({
                                                 <span className={`px-2 py-0.5 rounded-full text-xs ${statusColor.bg} ${statusColor.text}`}>
                                                     {conf.status}
                                                 </span>
-                                                <ConfidenceIndicator score={conf.confidence_score} />
+                                                <ReviewStatusIndicator status={conf.review_status} />
                                             </div>
                                             <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
                                                 <span className="flex items-center gap-1">
