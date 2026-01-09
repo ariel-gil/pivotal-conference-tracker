@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { updateConferenceField } from '@/lib/db';
 import { validateAdminAuth, unauthorizedResponse } from '@/lib/auth';
 
@@ -40,6 +41,8 @@ export async function POST(request: NextRequest) {
         if (!result.success) {
             return NextResponse.json({ error: result.error || 'Update failed' }, { status: 404 });
         }
+
+        revalidatePath('/');
 
         return NextResponse.json({
             success: true,
