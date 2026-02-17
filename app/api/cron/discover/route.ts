@@ -3,6 +3,7 @@ import { getAllConferences, setAllConferences, addToPending, validateConferenceD
 import type { Conference, PendingConferenceInput } from '@/lib/db';
 import { validateCronAuth, unauthorizedResponse } from '@/lib/auth';
 import { discoverConferences } from '@/lib/verification';
+import { assignTier } from '@/lib/tiers';
 
 export async function GET(request: NextRequest) {
     // Verify cron secret
@@ -34,31 +35,38 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        // Validate and separate by confidence
-        const validHigh: PendingConferenceInput[] = [];
-        const validLow: PendingConferenceInput[] = [];
+        // Validate and separate by tier + confidence
+        const autoAdd: PendingConferenceInput[] = [];
+        const toPending: PendingConferenceInput[] = [];
         const invalid: Array<{ conference: string; errors: string[] }> = [];
 
         for (const conf of discovered) {
+            // Ensure tier is assigned
+            if (!conf.tier) {
+                conf.tier = assignTier(conf.name || '');
+            }
+
             const validation = validateConferenceData(conf);
             if (!validation.valid) {
                 invalid.push({ conference: conf.name || 'Unknown', errors: validation.errors });
                 continue;
             }
 
-            if (conf.confidence_score === 'high') {
-                validHigh.push(conf);
+            // Auto-add top/notable conferences with high confidence
+            const isAutoApproveTier = conf.tier === 'top' || conf.tier === 'notable';
+            if (isAutoApproveTier && conf.confidence_score === 'high') {
+                autoAdd.push(conf);
             } else {
-                validLow.push(conf);
+                toPending.push(conf);
             }
         }
 
-        // Auto-add high confidence conferences
+        // Auto-add qualified conferences
         const addedConferences: string[] = [];
-        if (validHigh.length > 0) {
+        if (autoAdd.length > 0) {
             const nextId = existing.length > 0 ? Math.max(...existing.map(c => c.id)) + 1 : 1;
 
-            const newConferences: Conference[] = validHigh.map((conf, idx) => ({
+            const newConferences: Conference[] = autoAdd.map((conf, idx) => ({
                 id: nextId + idx,
                 name: conf.name,
                 deadline: conf.deadline,
@@ -70,6 +78,7 @@ export async function GET(request: NextRequest) {
                 link: conf.link,
                 category: conf.category,
                 status: conf.status,
+                tier: conf.tier || assignTier(conf.name),
                 review_status: 'unreviewed',
                 confidence_score: conf.confidence_score as Conference['confidence_score'],
                 verification_sources: [],
@@ -78,20 +87,20 @@ export async function GET(request: NextRequest) {
             }));
 
             await setAllConferences([...existing, ...newConferences]);
-            addedConferences.push(...validHigh.map(c => c.name));
+            addedConferences.push(...autoAdd.map(c => c.name));
 
-            for (const conf of validHigh) {
+            for (const conf of autoAdd) {
                 await addChangelogEntry({
                     type: 'added',
                     conferenceName: conf.name,
-                    details: `Auto-discovered and added (high confidence, deadline: ${conf.deadline})`
+                    details: `Auto-discovered and added (${conf.tier} tier, high confidence, deadline: ${conf.deadline})`
                 });
             }
         }
 
-        // Add low confidence to pending for review
+        // Add remaining to pending for review
         let pendingAdded = 0;
-        for (const conf of validLow) {
+        for (const conf of toPending) {
             const added = await addToPending(conf);
             if (added) pendingAdded++;
         }

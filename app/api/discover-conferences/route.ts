@@ -3,6 +3,7 @@ import { getAllConferences, setAllConferences, addToPending, validateConferenceD
 import type { Conference, PendingConferenceInput } from '@/lib/db';
 import { validateAdminAuth, unauthorizedResponse, checkRateLimit, rateLimitedResponse } from '@/lib/auth';
 import { discoverConferences } from '@/lib/verification';
+import { assignTier } from '@/lib/tiers';
 
 export async function POST(request: NextRequest) {
     // Require admin auth for discovery
@@ -43,6 +44,11 @@ export async function POST(request: NextRequest) {
         const invalid: Array<{ conference: string; errors: string[] }> = [];
 
         for (const conf of discovered) {
+            // Ensure tier is assigned before adding to pending
+            if (!conf.tier) {
+                conf.tier = assignTier(conf.name || '');
+            }
+
             const validation = validateConferenceData(conf);
             if (!validation.valid) {
                 invalid.push({ conference: conf.name || 'Unknown', errors: validation.errors });
