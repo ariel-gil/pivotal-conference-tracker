@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { AI_MODELS, VERIFICATION_MODELS, DISCOVERY_MODEL, DISCOVERY_FALLBACK } from './config';
+import { assignTier, VALID_TIERS, ConferenceTier } from './tiers';
 
 // ============================================================================
 // Types
@@ -217,7 +218,7 @@ export async function verifyConferenceDeadline(conferenceName: string): Promise<
 
 export async function discoverConferences(existingNames: string): Promise<any[]> {
     const prompt = `Search for upcoming AI safety, AI ethics, machine learning, and NLP conferences in 2026 and 2027.
-        
+
 Focus on academic conferences relevant to AI alignment, AI safety research, fairness, transparency, and interpretability.
 
 Return ONLY a JSON array with this exact format:
@@ -233,9 +234,15 @@ Return ONLY a JSON array with this exact format:
     "link": "Official website URL",
     "category": "safety/ml/nlp/ethics",
     "status": "open/passed/rolling",
-    "confidence_score": "high/medium/low"
+    "confidence_score": "high/medium/low",
+    "tier": "top/notable/niche"
   }
 ]
+
+Tier guidance:
+- "top": Flagship venues (e.g. NeurIPS, ICML, ICLR, CVPR, ACL, EMNLP, IJCAI, AAAI)
+- "notable": Well-known, relevant conferences (e.g. FAccT, COLM, AAMAS, AIES, EAAMO, SAFECOMP)
+- "niche": Smaller, newer, or highly specialized conferences
 
 Exclude these existing conferences: ${existingNames}
 
@@ -260,7 +267,14 @@ Do not include any conferences more than 1 year into the future from today's dat
 
             if (jsonMatch) {
                 console.log(`Discovery succeeded with ${model}`);
-                return JSON.parse(jsonMatch[0]);
+                const results = JSON.parse(jsonMatch[0]);
+                // Normalize tier: fall back to assignTier() if missing or invalid
+                for (const conf of results) {
+                    if (!conf.tier || !VALID_TIERS.includes(conf.tier)) {
+                        conf.tier = assignTier(conf.name || '');
+                    }
+                }
+                return results;
             }
         } catch (error) {
             console.error(`Discovery with ${model} failed:`, error);
