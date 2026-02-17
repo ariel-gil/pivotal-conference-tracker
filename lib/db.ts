@@ -1,4 +1,5 @@
 import Redis from 'ioredis';
+import { ConferenceTier, assignTier, VALID_TIERS } from './tiers';
 
 // ============================================================================
 // Constants
@@ -67,6 +68,7 @@ export interface Conference {
   link: string;
   category: string;
   status: string;
+  tier: ConferenceTier;
   review_status: 'unreviewed' | 'reviewed' | 'speculative';
   confidence_score: 'high' | 'medium' | 'low' | 'needs-review';
   verification_sources: string[];
@@ -111,6 +113,7 @@ export interface PendingConference {
   link: string;
   category: string;
   status: string;
+  tier?: ConferenceTier;
   confidence_score: string;
   addedAt: string;
 }
@@ -151,6 +154,7 @@ export interface PendingConferenceInput {
   link: string;
   category: string;
   status: string;
+  tier?: ConferenceTier;
   confidence_score: string;
 }
 
@@ -164,7 +168,14 @@ export interface PendingConferenceInput {
 export async function getAllConferences(): Promise<Conference[]> {
   try {
     const data = await redis.get(CONFERENCES_KEY);
-    return data ? JSON.parse(data) : [];
+    const conferences: Conference[] = data ? JSON.parse(data) : [];
+    // Backfill missing tier on read for existing data
+    for (const c of conferences) {
+      if (!c.tier) {
+        c.tier = assignTier(c.name);
+      }
+    }
+    return conferences;
   } catch (error) {
     console.error('Failed to get conferences:', error);
     throw new Error(`Database read failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -247,6 +258,7 @@ export async function initializeDatabase(
     const initializedConferences: Conference[] = conferences.map((conf, index) => ({
       ...conf,
       id: index + 1,
+      tier: conf.tier || assignTier(conf.name),
       review_status: 'unreviewed',
       verification_sources: [],
       verification_history: [],
@@ -268,7 +280,14 @@ export async function setAllConferences(conferences: Conference[]): Promise<void
 export async function getPendingConferences(): Promise<PendingConference[]> {
   try {
     const data = await redis.get(PENDING_KEY);
-    return data ? JSON.parse(data) : [];
+    const pending: PendingConference[] = data ? JSON.parse(data) : [];
+    // Backfill missing tier on read for existing data
+    for (const c of pending) {
+      if (!c.tier) {
+        c.tier = assignTier(c.name);
+      }
+    }
+    return pending;
   } catch (error) {
     console.error('Failed to get pending conferences:', error);
     throw new Error(`Database read failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -306,6 +325,7 @@ export async function addToPending(conference: PendingConferenceInput): Promise<
     link: conference.link,
     category: conference.category,
     status: conference.status,
+    tier: conference.tier || assignTier(conference.name),
     confidence_score: conference.confidence_score,
     addedAt: new Date().toISOString()
   };
@@ -348,6 +368,7 @@ export async function approvePendingConference(pendingId: string): Promise<boole
       link: approved.link,
       category: approved.category,
       status: approved.status,
+      tier: approved.tier || assignTier(approved.name),
       review_status: 'unreviewed',
       confidence_score: approved.confidence_score as Conference['confidence_score'],
       verification_sources: [],
@@ -620,6 +641,7 @@ export function validateConferenceData(conf: PendingConferenceInput): { valid: b
   if (!['safety', 'ml', 'nlp', 'ethics'].includes(conf.category)) errors.push('Invalid category');
   if (!['open', 'passed', 'rolling'].includes(conf.status)) errors.push('Invalid status');
   if (!['high', 'medium', 'low', 'needs-review'].includes(conf.confidence_score)) errors.push('Invalid confidence');
+  if (conf.tier && !VALID_TIERS.includes(conf.tier)) errors.push('Invalid tier');
 
   return { valid: errors.length === 0, errors };
 }
