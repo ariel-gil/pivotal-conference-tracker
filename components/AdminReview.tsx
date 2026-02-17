@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Check, X, RefreshCw, Trash2, ChevronDown, AlertTriangle, Edit3, Save } from 'lucide-react';
 import type { PendingConference, Conference, PendingUpdate } from '@/lib/db';
+import { TIER_OPTIONS } from '@/lib/tiers';
 
 const REVIEW_STATUS_OPTIONS = [
     { value: 'unreviewed', label: 'Unreviewed', color: 'bg-gray-100 text-gray-800' },
@@ -222,6 +223,11 @@ export default function AdminReview({
         return option?.color || 'bg-gray-100 text-gray-800';
     };
 
+    const getTierStyle = (tier?: string) => {
+        const option = TIER_OPTIONS.find(o => o.value === tier);
+        return option?.color || 'bg-gray-100 text-gray-600';
+    };
+
     return (
         <div className="min-h-screen bg-gray-50 p-4">
             <div className="max-w-4xl mx-auto">
@@ -328,6 +334,11 @@ export default function AdminReview({
                                             <p><span className="font-medium">Location:</span> {conf.location}</p>
                                             <p><span className="font-medium">Dates:</span> {conf.dates}</p>
                                             <p><span className="font-medium">Category:</span> {conf.category}</p>
+                                            <p><span className="font-medium">Tier:</span>
+                                                <span className={`ml-1 px-2 py-0.5 rounded text-xs ${getTierStyle(conf.tier)}`}>
+                                                    {conf.tier || 'niche'}
+                                                </span>
+                                            </p>
                                             <p><span className="font-medium">Confidence:</span>
                                                 <span className={`ml-1 px-2 py-0.5 rounded text-xs ${conf.confidence_score === 'high' ? 'bg-green-100 text-green-800' :
                                                     conf.confidence_score === 'medium' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'
@@ -411,6 +422,20 @@ export default function AdminReview({
                                                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                                                 ))}
                                             </select>
+                                            <select
+                                                value={conf.tier || 'niche'}
+                                                onChange={(e) => {
+                                                    e.stopPropagation();
+                                                    handleUpdateField(conf.id, 'tier', e.target.value);
+                                                }}
+                                                onClick={(e) => e.stopPropagation()}
+                                                className={`px-2 py-0.5 rounded text-xs border-0 cursor-pointer ${getTierStyle(conf.tier)}`}
+                                                disabled={loading === `field-${conf.id}-tier`}
+                                            >
+                                                {TIER_OPTIONS.map(opt => (
+                                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                                ))}
+                                            </select>
                                         </div>
                                         <div className="text-sm text-gray-500 ml-6 flex items-center gap-2">
                                             <span>Deadline:</span>
@@ -470,6 +495,11 @@ export default function AdminReview({
                                                 <p><span className="font-medium text-gray-700">Abstract deadline:</span> {conf.abstract_deadline}</p>
                                             )}
                                             <p><span className="font-medium text-gray-700">Requirements:</span> {conf.requirements}</p>
+                                            <p><span className="font-medium text-gray-700">Tier:</span>{' '}
+                                                <span className={`px-2 py-0.5 rounded text-xs ${getTierStyle(conf.tier)}`}>
+                                                    {conf.tier || 'niche'}
+                                                </span>
+                                            </p>
                                             <p><span className="font-medium text-gray-700">AI Confidence:</span>{' '}
                                                 <span className={`px-2 py-0.5 rounded text-xs ${conf.confidence_score === 'high' ? 'bg-green-100 text-green-800' :
                                                     conf.confidence_score === 'medium' ? 'bg-amber-100 text-amber-800' :
