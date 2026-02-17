@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Calendar, ExternalLink, Filter, ChevronDown, ChevronUp, AlertCircle, Check, CheckCheck, Search, HelpCircle, Clock, Plus, RefreshCw, Bug } from 'lucide-react';
 import { Conference, ChangelogEntry } from '@/lib/db';
+import { TIER_OPTIONS, ConferenceTier } from '@/lib/tiers';
 
 // ============================================================================
 // Constants
@@ -22,6 +23,12 @@ const statusColors = {
     open: { bg: 'bg-green-100', text: 'text-green-800' },
     passed: { bg: 'bg-gray-100', text: 'text-gray-500' },
     rolling: { bg: 'bg-blue-100', text: 'text-blue-800' }
+};
+
+const tierColors: Record<string, { bg: string; text: string }> = {
+    top: { bg: 'bg-yellow-100', text: 'text-yellow-800' },
+    notable: { bg: 'bg-sky-100', text: 'text-sky-800' },
+    niche: { bg: 'bg-gray-100', text: 'text-gray-600' },
 };
 
 const changelogIcons = {
@@ -154,8 +161,15 @@ export default function ConferenceTracker({
     error: string | null;
 }) {
     const [filter, setFilter] = useState('all');
+    const [tierFilter, setTierFilter] = useState<ConferenceTier[]>(['top', 'notable']);
     const [showPassed, setShowPassed] = useState(false);
     const [expandedId, setExpandedId] = useState<number | null>(null);
+
+    const toggleTier = (tier: ConferenceTier) => {
+        setTierFilter(prev =>
+            prev.includes(tier) ? prev.filter(t => t !== tier) : [...prev, tier]
+        );
+    };
 
     if (error) {
         return (
@@ -177,6 +191,7 @@ export default function ConferenceTracker({
     const filteredConferences = initialConferences
         .filter(c => {
             if (filter !== 'all' && c.category !== filter) return false;
+            if (tierFilter.length > 0 && !tierFilter.includes(c.tier || 'niche')) return false;
             // Filter by deadline date, not conference status
             if (!showPassed) {
                 const daysUntilDeadline = getDaysUntil(c.deadline);
@@ -266,6 +281,22 @@ export default function ConferenceTracker({
                             </label>
                         </div>
                     </div>
+                    <div className="flex flex-wrap gap-3 items-center mt-3 pt-3 border-t border-gray-100">
+                        <span className="text-sm text-gray-600">Tier:</span>
+                        {TIER_OPTIONS.map(opt => (
+                            <button
+                                key={opt.value}
+                                onClick={() => toggleTier(opt.value)}
+                                className={`px-3 py-1 rounded-full text-sm ${
+                                    tierFilter.includes(opt.value)
+                                        ? opt.color
+                                        : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
+                                }`}
+                            >
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 {/* Conference List */}
@@ -308,6 +339,14 @@ export default function ConferenceTracker({
                                                 <span className={`px-2 py-0.5 rounded-full text-xs ${statusColor.bg} ${statusColor.text}`}>
                                                     {conf.status}
                                                 </span>
+                                                {(() => {
+                                                    const tc = tierColors[conf.tier || 'niche'] || tierColors.niche;
+                                                    return (
+                                                        <span className={`px-2 py-0.5 rounded-full text-xs ${tc.bg} ${tc.text}`}>
+                                                            {conf.tier || 'niche'}
+                                                        </span>
+                                                    );
+                                                })()}
                                                 <ReviewStatusIndicator status={conf.review_status} />
                                             </div>
                                             <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
@@ -403,7 +442,17 @@ export default function ConferenceTracker({
 
                 {/* Footer */}
                 <div className="mt-6 text-center text-sm text-gray-500">
-                    <p>{initialConferences.length} conferences tracked • Automated verification every 24 hours</p>
+                    <p>
+                        {initialConferences.length} conferences tracked
+                        {' • '}
+                        {initialConferences.filter(c => c.tier === 'top').length} top
+                        {' / '}
+                        {initialConferences.filter(c => c.tier === 'notable').length} notable
+                        {' / '}
+                        {initialConferences.filter(c => !c.tier || c.tier === 'niche').length} niche
+                        {' • '}
+                        Automated verification every 24 hours
+                    </p>
                     <a
                         href="https://github.com/ariel-gil/pivotal-conference-tracker/issues/new?title=Bug%20Report&body=%23%23%20Description%0ADescribe%20the%20issue...%0A%0A%23%23%20Steps%20to%20Reproduce%0A1.%20...%0A%0A%23%23%20Expected%20Behavior%0A..."
                         target="_blank"
