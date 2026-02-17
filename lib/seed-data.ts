@@ -9,6 +9,7 @@ export const initialConferences = [
         link: "https://tais2026.cc",
         category: "safety",
         status: "open",
+        tier: "niche" as const,
         confidence_score: "medium" as const
     },
     {
@@ -22,6 +23,7 @@ export const initialConferences = [
         link: "https://facctconference.org/2026/cfp.html",
         category: "ethics",
         status: "open",
+        tier: "notable" as const,
         confidence_score: "high" as const
     },
     {
@@ -35,6 +37,7 @@ export const initialConferences = [
         link: "https://2026.ijcai.org/",
         category: "ml",
         status: "open",
+        tier: "top" as const,
         confidence_score: "high" as const
     },
     {
@@ -48,6 +51,7 @@ export const initialConferences = [
         link: "https://icml.cc/Conferences/2026/CallForPapers",
         category: "ml",
         status: "open",
+        tier: "top" as const,
         confidence_score: "high" as const
     },
     {
@@ -61,6 +65,7 @@ export const initialConferences = [
         link: "https://icml.cc/Conferences/2026/CallForPositionPapers",
         category: "ml",
         status: "open",
+        tier: "top" as const,
         confidence_score: "high" as const
     },
     {
@@ -73,6 +78,7 @@ export const initialConferences = [
         link: "https://2026.aclweb.org/calls/main_conference_papers/",
         category: "nlp",
         status: "open",
+        tier: "top" as const,
         confidence_score: "high" as const
     },
     {
@@ -85,6 +91,7 @@ export const initialConferences = [
         link: "https://attend.ieee.org/wcci-2026/",
         category: "ml",
         status: "open",
+        tier: "notable" as const,
         confidence_score: "high" as const
     },
     {
@@ -98,6 +105,7 @@ export const initialConferences = [
         link: "https://colmweb.org/cfp.html",
         category: "safety",
         status: "open",
+        tier: "notable" as const,
         confidence_score: "high" as const
     },
     {
@@ -110,6 +118,7 @@ export const initialConferences = [
         link: "https://neurips.cc/Conferences/2026/Dates",
         category: "ml",
         status: "open",
+        tier: "top" as const,
         confidence_score: "medium" as const
     },
     {
@@ -122,6 +131,7 @@ export const initialConferences = [
         link: "https://x.com/emnlpmeeting",
         category: "nlp",
         status: "open",
+        tier: "top" as const,
         confidence_score: "medium" as const
     },
     {
@@ -134,6 +144,7 @@ export const initialConferences = [
         link: "https://safecomp2026.webs.upv.es/",
         category: "safety",
         status: "open",
+        tier: "notable" as const,
         confidence_score: "medium" as const
     },
     {
@@ -146,6 +157,7 @@ export const initialConferences = [
         link: "https://www.aies-conference.com/",
         category: "ethics",
         status: "open",
+        tier: "notable" as const,
         confidence_score: "medium" as const
     },
     {
@@ -158,6 +170,7 @@ export const initialConferences = [
         link: "https://conference.eaamo.org/cfp/",
         category: "ethics",
         status: "open",
+        tier: "notable" as const,
         confidence_score: "medium" as const
     },
     {
@@ -170,6 +183,7 @@ export const initialConferences = [
         link: "https://iclr.cc/Conferences/2026/CallForPapers",
         category: "ml",
         status: "passed",
+        tier: "top" as const,
         confidence_score: "high" as const
     },
     {
@@ -182,6 +196,7 @@ export const initialConferences = [
         link: "https://aaai.org/conference/aaai/aaai-26/aia-call/",
         category: "safety",
         status: "passed",
+        tier: "top" as const,
         confidence_score: "high" as const
     },
     {
@@ -194,6 +209,7 @@ export const initialConferences = [
         link: "https://cyprusconferences.org/aamas2026/",
         category: "ml",
         status: "passed",
+        tier: "notable" as const,
         confidence_score: "high" as const
     },
     {
@@ -206,6 +222,7 @@ export const initialConferences = [
         link: "https://cvpr.thecvf.com/Conferences/2026/CallForPapers",
         category: "ml",
         status: "passed",
+        tier: "top" as const,
         confidence_score: "high" as const
     },
     {
@@ -218,6 +235,7 @@ export const initialConferences = [
         link: "https://www.iaseai.org/iaseai26",
         category: "safety",
         status: "rolling",
+        tier: "niche" as const,
         confidence_score: "high" as const
     }
 ];
