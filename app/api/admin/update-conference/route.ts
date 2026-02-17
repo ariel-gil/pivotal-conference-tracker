@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Whitelist allowed fields for security
-        const allowedFields = ['deadline', 'review_status', 'dates', 'location', 'abstract_deadline'];
+        const allowedFields = ['deadline', 'review_status', 'dates', 'location', 'abstract_deadline', 'tier'];
         if (!allowedFields.includes(field)) {
             return NextResponse.json({ error: `Field '${field}' is not editable` }, { status: 400 });
         }
@@ -29,6 +29,11 @@ export async function POST(request: NextRequest) {
         // Validate review_status values
         if (field === 'review_status' && !['unreviewed', 'reviewed', 'speculative'].includes(value)) {
             return NextResponse.json({ error: 'Invalid review_status value' }, { status: 400 });
+        }
+
+        // Validate tier values
+        if (field === 'tier' && !['top', 'notable', 'niche'].includes(value)) {
+            return NextResponse.json({ error: 'Invalid tier value' }, { status: 400 });
         }
 
         // Validate deadline format
