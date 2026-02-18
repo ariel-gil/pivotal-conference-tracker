@@ -191,7 +191,7 @@ export default function ConferenceTracker({
     const filteredConferences = initialConferences
         .filter(c => {
             if (filter !== 'all' && c.category !== filter) return false;
-            if (tierFilter.length > 0 && !tierFilter.includes(c.tier || 'niche')) return false;
+            if (!tierFilter.includes(c.tier || 'niche')) return false;
             // Filter by deadline date, not conference status
             if (!showPassed) {
                 const daysUntilDeadline = getDaysUntil(c.deadline);
