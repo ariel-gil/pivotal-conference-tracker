@@ -329,6 +329,60 @@ export function isConferenceDuplicate(
   return false;
 }
 
+/**
+ * Scans all conferences for duplicates using `isConferenceDuplicate()`.
+ * Keeps the first occurrence (lower ID = added earlier), removes later duplicates.
+ * Uses WATCH/MULTI for safe concurrent writes.
+ */
+export async function findAndRemoveDuplicates(): Promise<{
+  removed: Array<{ id: number; name: string; duplicateOf: string }>;
+}> {
+  await redis.watch(CONFERENCES_KEY);
+
+  try {
+    const conferences = await getAllConferences();
+    const seen: Conference[] = [];
+    const toRemove: Array<{ id: number; name: string; duplicateOf: string }> = [];
+
+    // Sort by ID ascending so lower IDs (added earlier) are kept
+    const sorted = [...conferences].sort((a, b) => a.id - b.id);
+
+    for (const conf of sorted) {
+      const match = seen.find(s => isConferenceDuplicate(conf.name, [s]));
+      if (match) {
+        toRemove.push({ id: conf.id, name: conf.name, duplicateOf: match.name });
+      } else {
+        seen.push(conf);
+      }
+    }
+
+    if (toRemove.length === 0) {
+      await redis.unwatch();
+      return { removed: [] };
+    }
+
+    const removeIds = new Set(toRemove.map(r => r.id));
+    const filtered = conferences.filter(c => !removeIds.has(c.id));
+
+    const multi = redis.multi();
+    multi.set(CONFERENCES_KEY, JSON.stringify(filtered));
+    await multi.exec();
+
+    // Log each removal to changelog
+    for (const entry of toRemove) {
+      await addChangelogEntry({
+        type: 'updated',
+        conferenceName: entry.name,
+        details: `Removed as duplicate of "${entry.duplicateOf}"`
+      });
+    }
+
+    return { removed: toRemove };
+  } finally {
+    await redis.unwatch();
+  }
+}
+
 // ============================================================================
 // Pending Conference Functions
 // ============================================================================

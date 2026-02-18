@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, X, RefreshCw, Trash2, ChevronDown, AlertTriangle, Edit3, Save } from 'lucide-react';
+import { Check, X, RefreshCw, Trash2, ChevronDown, AlertTriangle, Edit3, Save, Copy } from 'lucide-react';
 import type { PendingConference, Conference, PendingUpdate } from '@/lib/db';
 import { TIER_OPTIONS } from '@/lib/tiers';
 
@@ -31,6 +31,11 @@ export default function AdminReview({
         pending_review?: number;
         auto_added?: string[];
         error?: string;
+    } | null>(null);
+    const [deduplicating, setDeduplicating] = useState(false);
+    const [dedupResult, setDedupResult] = useState<{
+        removedCount: number;
+        removed: Array<{ id: number; name: string; duplicateOf: string }>;
     } | null>(null);
     const [expandedConf, setExpandedConf] = useState<number | null>(null);
     const [editingDeadline, setEditingDeadline] = useState<number | null>(null);
@@ -134,6 +139,38 @@ export default function AdminReview({
         setDiscovering(false);
     };
 
+    const handleDeduplicate = async () => {
+        if (!confirm('Scan for and remove duplicate conferences? The first occurrence (lowest ID) is kept.')) {
+            return;
+        }
+
+        setDeduplicating(true);
+        setDedupResult(null);
+
+        try {
+            const res = await fetch('/api/admin/deduplicate', {
+                method: 'POST',
+                credentials: 'include'
+            });
+
+            const result = await res.json();
+
+            if (res.ok) {
+                setDedupResult(result);
+                if (result.removedCount > 0) {
+                    const removedIds = new Set(result.removed.map((r: { id: number }) => r.id));
+                    setConferences(conferences.filter(c => !removedIds.has(c.id)));
+                }
+            } else {
+                alert(`Deduplication failed: ${result.error}`);
+            }
+        } catch (error) {
+            alert(`Error: ${error instanceof Error ? error.message : String(error)}`);
+        }
+
+        setDeduplicating(false);
+    };
+
     const handleUpdateField = async (id: number, field: string, value: string) => {
         setLoading(`field-${id}-${field}`);
         try {
@@ -233,14 +270,24 @@ export default function AdminReview({
             <div className="max-w-4xl mx-auto">
                 <div className="flex items-center justify-between mb-6">
                     <h1 className="text-2xl font-bold">Conference Admin Panel</h1>
-                    <button
-                        onClick={handleDiscover}
-                        disabled={discovering}
-                        className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
-                    >
-                        <RefreshCw className={`w-4 h-4 ${discovering ? 'animate-spin' : ''}`} />
-                        {discovering ? 'Discovering...' : 'Discover New Conferences'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={handleDeduplicate}
+                            disabled={deduplicating}
+                            className="flex items-center gap-2 bg-amber-600 text-white px-4 py-2 rounded hover:bg-amber-700 disabled:opacity-50"
+                        >
+                            <Copy className={`w-4 h-4 ${deduplicating ? 'animate-pulse' : ''}`} />
+                            {deduplicating ? 'Scanning...' : 'Deduplicate'}
+                        </button>
+                        <button
+                            onClick={handleDiscover}
+                            disabled={discovering}
+                            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+                        >
+                            <RefreshCw className={`w-4 h-4 ${discovering ? 'animate-spin' : ''}`} />
+                            {discovering ? 'Discovering...' : 'Discover New Conferences'}
+                        </button>
+                    </div>
                 </div>
 
                 {/* Status Logic Explanation */}
@@ -249,6 +296,23 @@ export default function AdminReview({
                         AI-detected changes to reviewed conferences appear in &quot;AI-Suggested Updates&quot; for manual approval.
                         <span className="bg-gray-100 px-1 rounded">Unreviewed</span> and <span className="bg-amber-100 px-1 rounded">Speculative</span> conferences update automatically.</p>
                 </div>
+
+                {dedupResult && (
+                    <div className={`mb-4 p-4 rounded-lg ${dedupResult.removedCount > 0 ? 'bg-green-50 text-green-800' : 'bg-gray-50 text-gray-700'}`}>
+                        {dedupResult.removedCount > 0 ? (
+                            <div>
+                                <p className="font-medium">Removed {dedupResult.removedCount} duplicate{dedupResult.removedCount !== 1 ? 's' : ''}:</p>
+                                <ul className="mt-1 text-sm list-disc list-inside">
+                                    {dedupResult.removed.map(r => (
+                                        <li key={r.id}>{r.name} (duplicate of {r.duplicateOf})</li>
+                                    ))}
+                                </ul>
+                            </div>
+                        ) : (
+                            <p>No duplicates found.</p>
+                        )}
+                    </div>
+                )}
 
                 {discoveryResult && (
                     <div className={`mb-4 p-4 rounded-lg ${discoveryResult.error ? 'bg-red-50 text-red-800' : 'bg-green-50 text-green-800'}`}>
