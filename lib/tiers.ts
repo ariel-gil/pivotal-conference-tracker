@@ -62,6 +62,31 @@ export function assignTier(name: string): ConferenceTier {
 
 export const VALID_TIERS: ConferenceTier[] = ['top', 'notable', 'niche'];
 
+/**
+ * Returns the specific tier pattern key that a conference name matches,
+ * or null if no known pattern matches. Used for deduplication — two names
+ * that resolve to the same pattern key are likely the same conference.
+ */
+export function getTierPatternKey(name: string): string | null {
+  const lower = name.toLowerCase();
+
+  for (const pattern of TOP_PATTERNS) {
+    if (pattern === 'acl ') {
+      if (/\bacl\b/i.test(name)) return 'acl';
+    } else if (lower.includes(pattern)) {
+      return pattern;
+    }
+  }
+
+  for (const pattern of NOTABLE_PATTERNS) {
+    if (lower.includes(pattern)) {
+      return pattern;
+    }
+  }
+
+  return null;
+}
+
 export const TIER_OPTIONS = [
   { value: 'top' as const, label: 'Top', color: 'bg-yellow-100 text-yellow-800' },
   { value: 'notable' as const, label: 'Notable', color: 'bg-sky-100 text-sky-800' },

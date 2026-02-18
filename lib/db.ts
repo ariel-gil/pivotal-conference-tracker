@@ -1,5 +1,5 @@
 import Redis from 'ioredis';
-import { ConferenceTier, assignTier, VALID_TIERS } from './tiers';
+import { ConferenceTier, assignTier, VALID_TIERS, getTierPatternKey } from './tiers';
 
 // ============================================================================
 // Constants
@@ -274,6 +274,62 @@ export async function setAllConferences(conferences: Conference[]): Promise<void
 }
 
 // ============================================================================
+// Deduplication
+// ============================================================================
+
+function normalizeForDedup(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\d{4}/g, '')       // strip year suffixes
+    .replace(/[^a-z\s]/g, '')    // strip non-alpha except spaces
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function tokenizeForDedup(name: string): string[] {
+  return normalizeForDedup(name).split(' ').filter(t => t.length > 0);
+}
+
+/**
+ * Checks whether `candidateName` is a duplicate of any conference in the list.
+ * Uses three strategies:
+ *   1. Exact match after normalization (strip years, punctuation, lowercase)
+ *   2. Token overlap: all tokens of the shorter name appear in the longer name
+ *   3. Tier pattern key: both names resolve to the same known acronym pattern
+ */
+export function isConferenceDuplicate(
+  candidateName: string,
+  existingConferences: Array<{ name: string }>
+): boolean {
+  const candidateNorm = normalizeForDedup(candidateName);
+  const candidateTokens = tokenizeForDedup(candidateName);
+  const candidatePatternKey = getTierPatternKey(candidateName);
+
+  for (const existing of existingConferences) {
+    const existingNorm = normalizeForDedup(existing.name);
+
+    // 1. Exact match after normalization
+    if (candidateNorm === existingNorm) return true;
+
+    // 2. Token overlap: all tokens of the shorter name appear in the longer
+    const existingTokens = tokenizeForDedup(existing.name);
+    const [shorter, longer] = candidateTokens.length <= existingTokens.length
+      ? [candidateTokens, existingTokens]
+      : [existingTokens, candidateTokens];
+
+    if (shorter.length > 0 && shorter.every(t => longer.includes(t))) return true;
+
+    // 3. Tier pattern key match
+    if (candidatePatternKey) {
+      const existingPatternKey = getTierPatternKey(existing.name);
+      if (existingPatternKey === candidatePatternKey) return true;
+    }
+  }
+
+  return false;
+}
+
+// ============================================================================
 // Pending Conference Functions
 // ============================================================================
 
@@ -298,15 +354,8 @@ export async function addToPending(conference: PendingConferenceInput): Promise<
   const pending = await getPendingConferences();
   const existing = await getAllConferences();
 
-  // Check for duplicates using fuzzy name matching
-  const normalizedName = conference.name.toLowerCase().replace(/\s+/g, ' ').trim();
-
-  const isDuplicate = [...existing, ...pending].some(c => {
-    const existingName = c.name.toLowerCase().replace(/\s+/g, ' ').trim();
-    return existingName === normalizedName ||
-      existingName.includes(normalizedName) ||
-      normalizedName.includes(existingName);
-  });
+  // Check for duplicates using token overlap + tier pattern matching
+  const isDuplicate = isConferenceDuplicate(conference.name, [...existing, ...pending]);
 
   if (isDuplicate) {
     console.log(`Skipping duplicate conference: ${conference.name}`);
@@ -354,6 +403,17 @@ export async function approvePendingConference(pendingId: string): Promise<boole
 
     const [approved] = pending.splice(approvedIndex, 1);
     const conferences = await getAllConferences();
+
+    // Check for duplicates before adding to public list
+    if (isConferenceDuplicate(approved.name, conferences)) {
+      console.log(`Approve blocked: "${approved.name}" duplicates an existing conference`);
+      // Remove from pending even though we're not adding — it's a stale duplicate
+      const multi = redis.multi();
+      multi.set(PENDING_KEY, JSON.stringify(pending));
+      await multi.exec();
+      return false;
+    }
+
     const nextId = conferences.length > 0 ? Math.max(...conferences.map(c => c.id)) + 1 : 1;
 
     const newConference: Conference = {

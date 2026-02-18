@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllConferences, setAllConferences, addToPending, validateConferenceData, addChangelogEntry } from '@/lib/db';
+import { getAllConferences, getPendingConferences, setAllConferences, addToPending, validateConferenceData, addChangelogEntry, isConferenceDuplicate } from '@/lib/db';
 import type { Conference, PendingConferenceInput } from '@/lib/db';
 import { validateCronAuth, unauthorizedResponse } from '@/lib/auth';
 import { discoverConferences } from '@/lib/verification';
@@ -20,7 +20,8 @@ export async function GET(request: NextRequest) {
         console.log('Starting scheduled conference discovery...');
 
         const existing = await getAllConferences();
-        const existingNames = existing.map(c => c.name).join(', ');
+        const pendingConfs = await getPendingConferences();
+        const existingNames = [...existing, ...pendingConfs].map(c => c.name).join(', ');
 
         // Use shared discovery function
         const discovered = await discoverConferences(existingNames);
@@ -64,43 +65,63 @@ export async function GET(request: NextRequest) {
         // Auto-add qualified conferences
         const addedConferences: string[] = [];
         if (autoAdd.length > 0) {
-            const nextId = existing.length > 0 ? Math.max(...existing.map(c => c.id)) + 1 : 1;
+            // Re-fetch fresh state to avoid stale-snapshot race condition
+            const freshExisting = await getAllConferences();
 
-            const newConferences: Conference[] = autoAdd.map((conf, idx) => ({
-                id: nextId + idx,
-                name: conf.name,
-                deadline: conf.deadline,
-                abstract_deadline: conf.abstract_deadline,
-                location: conf.location,
-                dates: conf.dates,
-                description: conf.description,
-                requirements: conf.requirements || 'See conference website',
-                link: conf.link,
-                category: conf.category,
-                status: conf.status,
-                tier: conf.tier || assignTier(conf.name),
-                review_status: 'unreviewed',
-                confidence_score: conf.confidence_score as Conference['confidence_score'],
-                verification_sources: [],
-                date_added: new Date().toISOString(),
-                verification_history: []
-            }));
+            // Filter out duplicates against current DB state
+            const dedupedAutoAdd = autoAdd.filter(
+                conf => !isConferenceDuplicate(conf.name, freshExisting)
+            );
 
-            await setAllConferences([...existing, ...newConferences]);
-            addedConferences.push(...autoAdd.map(c => c.name));
+            if (dedupedAutoAdd.length > 0) {
+                const nextId = freshExisting.length > 0 ? Math.max(...freshExisting.map(c => c.id)) + 1 : 1;
 
-            for (const conf of autoAdd) {
-                await addChangelogEntry({
-                    type: 'added',
-                    conferenceName: conf.name,
-                    details: `Auto-discovered and added (${conf.tier} tier, high confidence, deadline: ${conf.deadline})`
-                });
+                const newConferences: Conference[] = dedupedAutoAdd.map((conf, idx) => ({
+                    id: nextId + idx,
+                    name: conf.name,
+                    deadline: conf.deadline,
+                    abstract_deadline: conf.abstract_deadline,
+                    location: conf.location,
+                    dates: conf.dates,
+                    description: conf.description,
+                    requirements: conf.requirements || 'See conference website',
+                    link: conf.link,
+                    category: conf.category,
+                    status: conf.status,
+                    tier: conf.tier || assignTier(conf.name),
+                    review_status: 'unreviewed',
+                    confidence_score: conf.confidence_score as Conference['confidence_score'],
+                    verification_sources: [],
+                    date_added: new Date().toISOString(),
+                    verification_history: []
+                }));
+
+                await setAllConferences([...freshExisting, ...newConferences]);
+                addedConferences.push(...dedupedAutoAdd.map(c => c.name));
+
+                for (const conf of dedupedAutoAdd) {
+                    await addChangelogEntry({
+                        type: 'added',
+                        conferenceName: conf.name,
+                        details: `Auto-discovered and added (${conf.tier} tier, high confidence, deadline: ${conf.deadline})`
+                    });
+                }
+            }
+
+            if (dedupedAutoAdd.length < autoAdd.length) {
+                console.log(`Filtered ${autoAdd.length - dedupedAutoAdd.length} duplicate(s) from auto-add`);
             }
         }
 
+        // Filter toPending through dedup before calling addToPending (which also checks)
+        const freshForPending = await getAllConferences();
+        const dedupedToPending = toPending.filter(
+            conf => !isConferenceDuplicate(conf.name, freshForPending)
+        );
+
         // Add remaining to pending for review
         let pendingAdded = 0;
-        for (const conf of toPending) {
+        for (const conf of dedupedToPending) {
             const added = await addToPending(conf);
             if (added) pendingAdded++;
         }
