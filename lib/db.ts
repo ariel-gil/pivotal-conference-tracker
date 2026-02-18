@@ -1,5 +1,5 @@
 import Redis from 'ioredis';
-import { ConferenceTier, assignTier, VALID_TIERS, getTierPatternKey } from './tiers';
+import { ConferenceTier, assignTier, VALID_TIERS } from './tiers';
 
 // ============================================================================
 // Constants
@@ -290,12 +290,19 @@ function tokenizeForDedup(name: string): string[] {
   return normalizeForDedup(name).split(' ').filter(t => t.length > 0);
 }
 
+function extractYears(name: string): number[] {
+  return (name.match(/\d{4}/g) || []).map(Number);
+}
+
 /**
  * Checks whether `candidateName` is a duplicate of any conference in the list.
- * Uses three strategies:
+ * Uses two strategies with a year-mismatch guard:
  *   1. Exact match after normalization (strip years, punctuation, lowercase)
  *   2. Token overlap: all tokens of the shorter name appear in the longer name
- *   3. Tier pattern key: both names resolve to the same known acronym pattern
+ *      (requires the shorter name to have at least 2 tokens to avoid false positives)
+ *
+ * If both names contain 4-digit years and no year in common, they are never duplicates
+ * (e.g. "AAAI 2026" vs "AAAI 2027" are distinct editions).
  */
 export function isConferenceDuplicate(
   candidateName: string,
@@ -303,27 +310,33 @@ export function isConferenceDuplicate(
 ): boolean {
   const candidateNorm = normalizeForDedup(candidateName);
   const candidateTokens = tokenizeForDedup(candidateName);
-  const candidatePatternKey = getTierPatternKey(candidateName);
+  const candidateYears = extractYears(candidateName);
 
   for (const existing of existingConferences) {
+    // Year-mismatch guard: if both have years and share none, skip
+    const existingYears = extractYears(existing.name);
+    if (
+      candidateYears.length > 0 &&
+      existingYears.length > 0 &&
+      !candidateYears.some(y => existingYears.includes(y))
+    ) {
+      continue;
+    }
+
     const existingNorm = normalizeForDedup(existing.name);
 
     // 1. Exact match after normalization
     if (candidateNorm === existingNorm) return true;
 
     // 2. Token overlap: all tokens of the shorter name appear in the longer
+    //    Requires at least 2 tokens in the shorter name to avoid single-word
+    //    false positives (e.g. "Ai4" → token "ai" matching many names)
     const existingTokens = tokenizeForDedup(existing.name);
     const [shorter, longer] = candidateTokens.length <= existingTokens.length
       ? [candidateTokens, existingTokens]
       : [existingTokens, candidateTokens];
 
-    if (shorter.length > 0 && shorter.every(t => longer.includes(t))) return true;
-
-    // 3. Tier pattern key match
-    if (candidatePatternKey) {
-      const existingPatternKey = getTierPatternKey(existing.name);
-      if (existingPatternKey === candidatePatternKey) return true;
-    }
+    if (shorter.length >= 2 && shorter.every(t => longer.includes(t))) return true;
   }
 
   return false;
