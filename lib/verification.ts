@@ -60,8 +60,8 @@ export async function performSearch(
     fallbackModel?: string
 ): Promise<SearchResult> {
     const today = new Date().toISOString().split('T')[0];
-    const prompt = `Search for the official paper submission deadline for "${conferenceName}" conference in 2026. 
-Look for the official Call for Papers (CFP) or conference website. 
+    const prompt = `Search for the official paper submission deadline for "${conferenceName}".
+Look for the official Call for Papers (CFP) or conference website.
 Today's date is ${today}.
 
 Return ONLY a JSON object with this exact format:
@@ -216,7 +216,15 @@ export async function verifyConferenceDeadline(conferenceName: string): Promise<
 // Discovery
 // ============================================================================
 
-export async function discoverConferences(existingNames: string): Promise<any[]> {
+export async function discoverConferences(
+    existingNames: string[],
+    topTierNames: string[]
+): Promise<any[]> {
+    const excludeList = existingNames.join(', ');
+    const topExamples = topTierNames.length > 0
+        ? ` (e.g. ${topTierNames.join(', ')})`
+        : '';
+
     const prompt = `Search for upcoming AI safety, AI ethics, machine learning, and NLP conferences in 2026 and 2027.
 
 Focus on academic conferences relevant to AI alignment, AI safety research, fairness, transparency, and interpretability.
@@ -240,11 +248,15 @@ Return ONLY a JSON array with this exact format:
 ]
 
 Tier guidance:
-- "top": Flagship venues (e.g. NeurIPS, ICML, ICLR, CVPR, ACL, EMNLP, IJCAI, AAAI)
-- "notable": Well-known, relevant conferences (e.g. FAccT, COLM, AAMAS, AIES, EAAMO, SAFECOMP)
+- "top": Flagship venues${topExamples}
+- "notable": Well-known, relevant conferences
 - "niche": Smaller, newer, or highly specialized conferences
 
-Exclude these existing conferences: ${existingNames}
+IMPORTANT: We already track these exact conferences (do NOT return them):
+${excludeList}
+
+Only skip a conference if its EXACT name and year match one in the list above.
+For example, if "ICML 2026" is listed, you should still return "ICML 2027" since it is a different edition.
 
 Only return conferences you found with credible, recent sources. Set confidence_score to "high" only if you found official CFP/website.
 Do not include any conferences more than 1 year into the future from today's date.`;

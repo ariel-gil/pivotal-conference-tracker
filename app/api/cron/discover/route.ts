@@ -21,10 +21,11 @@ export async function GET(request: NextRequest) {
 
         const existing = await getAllConferences();
         const pendingConfs = await getPendingConferences();
-        const existingNames = [...existing, ...pendingConfs].map(c => c.name).join(', ');
+        const allNames = [...existing, ...pendingConfs].map(c => c.name);
+        const topTierNames = existing.filter(c => c.tier === 'top').map(c => c.name);
 
-        // Use shared discovery function
-        const discovered = await discoverConferences(existingNames);
+        // Use shared discovery function (pass all tracked + pending so AI skips them)
+        const discovered = await discoverConferences(allNames, topTierNames);
 
         if (discovered.length === 0) {
             console.log('No new conferences found in discovery');

@@ -24,10 +24,11 @@ export async function POST(request: NextRequest) {
 
     try {
         const existing = await getAllConferences();
-        const existingNames = existing.map(c => c.name).join(', ');
+        const existingNames = existing.map(c => c.name);
+        const topTierNames = existing.filter(c => c.tier === 'top').map(c => c.name);
 
         // Use shared discovery function
-        const discovered = await discoverConferences(existingNames);
+        const discovered = await discoverConferences(existingNames, topTierNames);
 
         if (discovered.length === 0) {
             return NextResponse.json({
