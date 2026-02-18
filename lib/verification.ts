@@ -213,6 +213,75 @@ export async function verifyConferenceDeadline(conferenceName: string): Promise<
 }
 
 // ============================================================================
+// Conference Announcement Verification
+// ============================================================================
+
+/**
+ * Verifies that a discovered conference has been officially announced with real
+ * dates/deadlines (not speculated or hallucinated). Uses search grounding to
+ * check for an actual CFP, official website, or credible announcement.
+ *
+ * Returns the conference object with an updated confidence_score, or null if
+ * the conference cannot be confirmed as announced.
+ */
+async function verifyAnnounced(
+    conf: { name: string; deadline: string; link: string; [key: string]: any },
+    modelName: string,
+    fallbackModel?: string
+): Promise<{ confirmed: boolean; confidence: string; source: string }> {
+    const prompt = `Search for the official Call for Papers (CFP) or conference website for "${conf.name}".
+
+I need to verify that this conference has been OFFICIALLY ANNOUNCED with real dates.
+The claimed submission deadline is ${conf.deadline} and the claimed website is ${conf.link}.
+
+Return ONLY a JSON object:
+{
+  "confirmed": true/false,
+  "confidence": "high/medium/low",
+  "source": "URL of official CFP or website you found",
+  "reason": "Brief explanation"
+}
+
+Set "confirmed" to true ONLY if you find an official CFP, conference website, or credible announcement with actual dates. Set to false if:
+- You cannot find any official announcement
+- The conference dates appear to be speculated or estimated
+- The website doesn't exist or has no CFP posted yet`;
+
+    const modelsToTry = [modelName];
+    if (fallbackModel) modelsToTry.push(fallbackModel);
+
+    for (const model of modelsToTry) {
+        try {
+            const response = await getGenAI().models.generateContent({
+                model,
+                contents: prompt,
+                config: {
+                    tools: [{ googleSearch: {} }]
+                }
+            });
+
+            const text = response.text;
+            const jsonMatch = text?.match(/\{[\s\S]*?\}/);
+            if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                console.log(`✓ Verification for "${conf.name}": confirmed=${parsed.confirmed}, confidence=${parsed.confidence}`);
+                return {
+                    confirmed: parsed.confirmed === true,
+                    confidence: parsed.confidence || 'low',
+                    source: parsed.source || ''
+                };
+            }
+        } catch (error) {
+            console.error(`Verification for "${conf.name}" with ${model} failed:`, error);
+            if (model === modelsToTry[modelsToTry.length - 1]) break;
+            console.log('Trying fallback model for verification...');
+        }
+    }
+
+    return { confirmed: false, confidence: 'low', source: '' };
+}
+
+// ============================================================================
 // Discovery
 // ============================================================================
 
@@ -258,8 +327,7 @@ ${excludeList}
 Only skip a conference if its EXACT name and year match one in the list above.
 For example, if "ICML 2026" is listed, you should still return "ICML 2027" since it is a different edition.
 
-Only return conferences you found with credible, recent sources. Set confidence_score to "high" only if you found official CFP/website.
-Do not include any conferences more than 1 year into the future from today's date.`;
+Only return conferences you found with credible, recent sources. Set confidence_score to "high" only if you found official CFP/website.`;
 
     // Try primary model, then fallback
     const modelsToTry = [DISCOVERY_MODEL, DISCOVERY_FALLBACK];
@@ -279,14 +347,37 @@ Do not include any conferences more than 1 year into the future from today's dat
 
             if (jsonMatch) {
                 console.log(`Discovery succeeded with ${model}`);
-                const results = JSON.parse(jsonMatch[0]);
+                const candidates = JSON.parse(jsonMatch[0]);
                 // Normalize tier: fall back to assignTier() if missing or invalid
-                for (const conf of results) {
+                for (const conf of candidates) {
                     if (!conf.tier || !VALID_TIERS.includes(conf.tier)) {
                         conf.tier = assignTier(conf.name || '');
                     }
                 }
-                return results;
+
+                // Verify each candidate has actually been announced
+                console.log(`Verifying ${candidates.length} discovered candidates...`);
+                const verificationResults = await Promise.all(
+                    candidates.map((conf: any) =>
+                        verifyAnnounced(conf, AI_MODELS.FLASH, AI_MODELS.FALLBACK_FLASH)
+                    )
+                );
+
+                const confirmed = candidates.filter((_: any, i: number) => {
+                    const v = verificationResults[i];
+                    if (!v.confirmed) {
+                        console.log(`✗ Filtered out "${candidates[i].name}" — not confirmed as announced`);
+                        return false;
+                    }
+                    // Downgrade confidence if verification confidence is lower
+                    if (v.confidence === 'low') {
+                        candidates[i].confidence_score = 'low';
+                    }
+                    return true;
+                });
+
+                console.log(`${confirmed.length}/${candidates.length} candidates confirmed as announced`);
+                return confirmed;
             }
         } catch (error) {
             console.error(`Discovery with ${model} failed:`, error);
